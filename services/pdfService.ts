@@ -221,7 +221,6 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   docPdf.setFont('helvetica', 'normal').setFontSize(7).text(settings.name, 125, sigY + 30);
 
   // --- 📱 保存/打开逻辑 (保留您原本的逻辑) ---
-  // 小提示：我为您加了一个小小的正则过滤 (.replace)，防止单号有特殊符号导致 Android 报错，其他没动
   const fileName = `${doc.type}_${doc.number.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
   if (Capacitor.isNativePlatform()) {
     try {
@@ -231,5 +230,90 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
     } catch (e) { alert('PDF Error: ' + JSON.stringify(e)); }
   } else {
     docPdf.save(fileName);
+  }
+};
+
+/**
+ * --- ✅ 新增：生成月度汇总报告 PDF ---
+ * @param monthData 包含单据列表的数组
+ * @param settings 公司设置
+ * @param period 周期描述（例如 "January 2026"）
+ */
+export const generateSummaryPDF = async (monthData: any[], settings: CompanySettings, period: string) => {
+  const docPdf = new jsPDF();
+  let startY = 20;
+
+  // 1. Header & Logo (复用您现有的头部样式)
+  if (settings.logo) {
+    try {
+      docPdf.addImage(settings.logo, 'PNG', 20, 10, 25, 20, undefined, 'FAST');
+      startY = 35;
+    } catch (e) { console.error(e); }
+  }
+
+  docPdf.setFontSize(16).setTextColor(30, 41, 59).setFont('helvetica', 'bold');
+  docPdf.text('MONTHLY SUMMARY REPORT', 190, startY, { align: 'right' });
+  docPdf.setFontSize(10).setFont('helvetica', 'normal').setTextColor(71, 85, 105);
+  docPdf.text(`Period: ${period}`, 190, startY + 7, { align: 'right' });
+
+  docPdf.setFontSize(12).setTextColor(30, 41, 59).setFont('helvetica', 'bold');
+  docPdf.text(safeStr(settings.name), 20, startY);
+  docPdf.setFontSize(8).setFont('helvetica', 'normal').text(`SSM: ${safeStr(settings.ssmNumber)}`, 20, startY + 5);
+
+  // 2. Summary Logic
+  const totals = monthData.reduce((acc, d) => ({
+    subtotal: acc.subtotal + d.subtotal,
+    tax: acc.tax + d.tax,
+    grandTotal: acc.grandTotal + d.total
+  }), { subtotal: 0, tax: 0, grandTotal: 0 });
+
+  // 3. Quick Stats Cards (简单的汇总信息显示)
+  docPdf.setFillColor(248, 250, 252);
+  docPdf.roundedRect(20, startY + 15, 170, 20, 3, 3, 'F');
+  
+  docPdf.setFontSize(9).setFont('helvetica', 'bold').setTextColor(30, 41, 59);
+  docPdf.text('TOTAL REVENUE', 30, startY + 23);
+  docPdf.text('TOTAL TAX (SST)', 90, startY + 23);
+  docPdf.text('DOC COUNT', 150, startY + 23);
+
+  docPdf.setFontSize(10).setTextColor(16, 185, 129); // Emerald color
+  docPdf.text(formatCurrency(totals.grandTotal), 30, startY + 29);
+  docPdf.setTextColor(59, 130, 246); // Blue color
+  docPdf.text(formatCurrency(totals.tax), 90, startY + 29);
+  docPdf.setTextColor(30, 41, 59);
+  docPdf.text(`${monthData.length} Docs`, 150, startY + 29);
+
+  // 4. Detailed Table
+  autoTable(docPdf, {
+    startY: startY + 45,
+    head: [['Date', 'Number', 'Customer', 'Subtotal', 'Tax', 'Total']],
+    body: monthData.map(d => [
+      formatDisplayDate(d.date),
+      d.number,
+      d.customerName,
+      formatCurrency(d.subtotal),
+      formatCurrency(d.tax),
+      formatCurrency(d.total)
+    ]),
+    theme: 'grid',
+    headStyles: { fillColor: [30, 41, 59], fontSize: 9 },
+    styles: { fontSize: 8 },
+    columnStyles: {
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right' }
+    }
+  });
+
+  // 5. Saving Logic (复用您现有的平台判断逻辑)
+  const reportName = `Report_${period.replace(/\s+/g, '_')}.pdf`;
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const pdfBase64 = docPdf.output('datauristring').split(',')[1];
+      const savedFile = await Filesystem.writeFile({ path: reportName, data: pdfBase64, directory: Directory.Documents, recursive: true });
+      await FileOpener.open({ filePath: savedFile.uri, contentType: 'application/pdf' });
+    } catch (e) { alert('Summary PDF Error: ' + JSON.stringify(e)); }
+  } else {
+    docPdf.save(reportName);
   }
 };

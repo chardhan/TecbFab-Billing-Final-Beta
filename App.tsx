@@ -9,15 +9,14 @@ import {
   Download, Copy, Trash2, Settings as SettingsIcon, CheckCircle2, Lock, Receipt, 
   Truck, ArrowRightLeft, ArrowRight, Menu, X, Image as ImageIcon, Clock, 
   CheckCircle, CreditCard, Ban, Activity, CalendarDays, Pencil, Package, 
-  ShieldCheck, Key, Globe, RotateCcw, Trash
+  ShieldCheck, Key, Globe, RotateCcw, Trash, BarChart3 // ✅ 新增图标
 } from 'lucide-react';
 import { DocType, AppState, Document, Customer, CompanySettings, LineItem, Product } from './types';
-// --- ✅ 保持常量导入 ---
 import { DOC_META, NAV_ITEMS, formatCurrency, roundTo } from './constants';
 import { generateDocumentPDF, generateSummaryPDF } from './services/pdfService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
-// --- 🌐 多语言字典 ---
+// --- 🌐 多语言字典 (新增税务报表相关词汇) ---
 type Lang = 'en' | 'zh' | 'ms';
 
 const TRANSLATIONS = {
@@ -29,6 +28,7 @@ const TRANSLATIONS = {
     workflow: "Workflow",
     settings: "Settings",
     recycle_bin: "Recycle Bin",
+    tax_report: "Tax Report (LHDN)", // ✅ 新增
     logout: "Logout",
     system_overview: "System Overview",
     new_transaction: "New Transaction",
@@ -82,7 +82,10 @@ const TRANSLATIONS = {
     factory_reset_confirm_msg: "WARNING: This will permanently delete ALL data. Continue?",
     enter_password_verify: "SECURITY CHECK: Enter Admin Password to confirm reset:",
     access_denied: "Incorrect Password! Access Denied.",
-    data_wiped: "System reset successful. Reloading..."
+    data_wiped: "System reset successful. Reloading...",
+    select_month: "Select Month", // ✅ 新增
+    consolidated_msg: "Consolidated Summary for LHDN Portal", // ✅ 新增
+    invoice_range: "Invoice Range" // ✅ 新增
   },
   zh: {
     dashboard: "仪表盘",
@@ -92,6 +95,7 @@ const TRANSLATIONS = {
     workflow: "工作流",
     settings: "系统设置",
     recycle_bin: "回收站",
+    tax_report: "税务报表 (LHDN)", // ✅ 新增
     logout: "退出登录",
     system_overview: "系统概览",
     new_transaction: "新建交易",
@@ -145,7 +149,10 @@ const TRANSLATIONS = {
     factory_reset_confirm_msg: "警告：此操作将永久删除所有数据！确定继续吗？",
     enter_password_verify: "安全检查：请输入管理员密码以确认重置：",
     access_denied: "密码错误！拒绝访问。",
-    data_wiped: "系统已重置。正在重新加载..."
+    data_wiped: "系统已重置。正在重新加载...",
+    select_month: "选择月份", // ✅ 新增
+    consolidated_msg: "LHDN 电子发票合并汇总", // ✅ 新增
+    invoice_range: "发票区间" // ✅ 新增
   },
   ms: {
     dashboard: "Papan Pemuka",
@@ -155,6 +162,7 @@ const TRANSLATIONS = {
     workflow: "Aliran Kerja",
     settings: "Tetapan",
     recycle_bin: "Tong Kitar Semula",
+    tax_report: "Laporan Cukai (LHDN)", // ✅ 新增
     logout: "Log Keluar",
     system_overview: "Gambaran Sistem",
     new_transaction: "Transaksi Baru",
@@ -208,7 +216,10 @@ const TRANSLATIONS = {
     factory_reset_confirm_msg: "AMARAN: Ini akan memadamkan SEMUA data secara kekal. Teruskan?",
     enter_password_verify: "PEMERIKSAAN KESELAMATAN: Masukkan Kata Laluan Admin untuk pengesahan:",
     access_denied: "Kata Laluan Salah! Akses Ditolak.",
-    data_wiped: "Sistem berjaya ditetapkan semula. Memuat semula..."
+    data_wiped: "Sistem berjaya ditetapkan semula. Memuat semula...",
+    select_month: "Pilih Bulan", // ✅ 新增
+    consolidated_msg: "Ringkasan Gabungan untuk Portal LHDN", // ✅ 新增
+    invoice_range: "Julat Invois" // ✅ 新增
   }
 };
 
@@ -303,6 +314,7 @@ const Sidebar = ({ isOpen, onClose, onLogout, lang, setLang }: { isOpen: boolean
     { label: t('customers'), path: '/customers', icon: <Users /> },
     { label: t('workflow'), path: '/workflow', icon: <ArrowRightLeft /> },
     { label: t('recycle_bin'), path: '/recycle-bin', icon: <Trash2 /> },
+    { label: t('tax_report'), path: '/tax-report', icon: <BarChart3 /> }, // ✅ 加入侧边栏
     { label: t('settings'), path: '/settings', icon: <SettingsIcon /> },
   ];
   return (
@@ -340,6 +352,119 @@ const Sidebar = ({ isOpen, onClose, onLogout, lang, setLang }: { isOpen: boolean
         </div>
       </aside>
     </>
+  );
+};
+
+// ✅ 新增：税务报表组件 (完全独立，不影响现有逻辑)
+const TaxReport = ({ state, lang }: { state: AppState, lang: Lang }) => {
+  const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+
+  const monthlyInvoices = useMemo(() => {
+    return state.documents.filter(doc => {
+      return !doc.isDeleted && 
+             doc.type === DocType.INVOICE && 
+             doc.status !== 'Cancelled' &&
+             doc.date.startsWith(selectedMonth);
+    }).sort((a, b) => a.number.localeCompare(b.number));
+  }, [state.documents, selectedMonth]);
+
+  const summary = useMemo(() => {
+    return monthlyInvoices.reduce((acc, doc) => {
+      const subtotal = doc.items.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice), 0);
+      const tax = doc.items.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
+      return {
+        count: acc.count + 1,
+        subtotal: acc.subtotal + subtotal,
+        tax: acc.tax + tax,
+        total: acc.total + (subtotal + tax - (doc.discount || 0))
+      };
+    }, { count: 0, subtotal: 0, tax: 0, total: 0 });
+  }, [monthlyInvoices]);
+
+  const invoiceRange = useMemo(() => {
+    if (monthlyInvoices.length === 0) return 'N/A';
+    return `${monthlyInvoices[0].number} - ${monthlyInvoices[monthlyInvoices.length - 1].number}`;
+  }, [monthlyInvoices]);
+
+  return (
+    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{t('tax_report')}</h1>
+          <p className="text-slate-500 font-medium">{t('consolidated_msg')}</p>
+        </div>
+        <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
+           <label className="text-xs font-black text-slate-400 uppercase px-2">{t('select_month')}</label>
+           <input 
+             type="month" 
+             className="bg-slate-50 border-none rounded-lg px-3 py-1.5 font-bold text-slate-900 outline-none"
+             value={selectedMonth}
+             onChange={(e) => setSelectedMonth(e.target.value)}
+           />
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-xl relative overflow-hidden">
+           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+           <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-2">Consolidated Total</p>
+           <p className="text-4xl font-black tracking-tighter mb-6">{formatCurrency(summary.total)}</p>
+           <div className="flex justify-between items-end">
+              <div><p className="text-[10px] text-slate-400 font-bold uppercase">{t('tax_total')}</p><p className="font-bold text-emerald-400">{formatCurrency(summary.tax)}</p></div>
+              <div className="text-right"><p className="text-[10px] text-slate-400 font-bold uppercase">Invoices</p><p className="font-bold">{summary.count}</p></div>
+           </div>
+        </div>
+
+        <div className="md:col-span-2 bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-center">
+           <div className="flex items-center gap-4 mb-4">
+              <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><FileText className="w-6 h-6" /></div>
+              <div><h3 className="font-extrabold text-slate-900">{t('invoice_range')}</h3><p className="text-slate-500 text-sm font-medium">Sequential tracking for e-Invoice compliance</p></div>
+           </div>
+           <p className="text-2xl font-black text-slate-900 tracking-tight bg-slate-50 p-4 rounded-2xl border border-slate-100 border-dashed text-center">{invoiceRange}</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+           <h3 className="font-black text-slate-400 uppercase text-[10px] tracking-widest">Transaction List</h3>
+           <span className="text-[10px] font-bold text-slate-400">Total {monthlyInvoices.length} items</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50/30 border-b border-slate-100">
+                <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_number')}</th>
+                <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Date</th>
+                <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('customer')}</th>
+                <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest text-right">{t('total')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {monthlyInvoices.map(doc => (
+                <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4 font-bold text-slate-900">{doc.number}</td>
+                  <td className="px-6 py-4 text-sm text-slate-500 font-medium">{doc.date}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-slate-700 truncate max-w-[200px]">{state.customers.find(c => c.id === doc.customerId)?.name}</td>
+                  <td className="px-6 py-4 text-right font-black text-slate-900">{formatCurrency(calculateGrandTotal(doc))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {monthlyInvoices.length === 0 && <div className="p-20 text-center opacity-30"><div className="mx-auto w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4"><Search className="w-8 h-8" /></div><p className="font-black uppercase tracking-widest text-sm">No Invoices found for this month</p></div>}
+        </div>
+      </div>
+
+      <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-2xl flex items-start gap-4">
+         <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><ShieldCheck className="w-5 h-5" /></div>
+         <div>
+            <p className="text-emerald-900 font-black text-sm">LHDN Compliance Tip</p>
+            <p className="text-emerald-700 text-xs font-medium mt-1 leading-relaxed">
+              For MSME with annual turnover below RM1M, you may use these monthly totals for your **Consolidated e-Invoice** submission. Ensure submission is done via MyInvois Portal by the 7th day of the following month.
+            </p>
+         </div>
+      </div>
+    </div>
   );
 };
 
@@ -551,7 +676,6 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
                     <td className="px-6 py-4 text-sm font-medium text-slate-600 truncate max-w-[150px]">{customer?.name || 'Unknown'}</td>
                     <td className="px-6 py-4 text-sm font-extrabold text-slate-900 whitespace-nowrap">{formatCurrency(total)}</td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
-                      {/* ✅ 优化：操作按钮调大尺寸，并增加点击区域 (p-3) */}
                       <div className="flex justify-end gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                         <button onClick={() => handlePdfDownload(doc)} className="p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('download_pdf')}><Download className="w-5.5 h-5.5" /></button>
                         <button onClick={() => navigate(`/documents/${doc.id}/edit`)} className="p-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title={t('edit')}><Pencil className="w-5.5 h-5.5" /></button>
@@ -607,7 +731,6 @@ const RecycleBin = ({ state, onRestore, onPermanentDelete, lang }: { state: AppS
                     <td className="px-6 py-4 whitespace-nowrap opacity-50"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase ${DOC_META[doc.type].color}`}>{doc.type}</span></td>
                     <td className="px-6 py-4 text-sm font-medium text-slate-400 truncate max-w-[150px]">{customer?.name || 'Unknown'}</td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
-                      {/* ✅ 优化：回收站内的恢复和删除按钮也相应调大 */}
                       <div className="flex justify-end gap-3">
                         <button onClick={() => onRestore(doc.id)} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-all">
                           <RotateCcw className="w-5 h-5" /> {t('restore')}
@@ -996,6 +1119,7 @@ const App = () => {
           <Route path="/" element={<Dashboard state={state} lang={lang} />} />
           <Route path="/documents" element={<DocumentsList state={state} onDelete={handleDeleteDoc} onConvert={handleConvertDoc} lang={lang} />} />
           <Route path="/recycle-bin" element={<RecycleBin state={state} onRestore={handleRestoreDoc} onPermanentDelete={handlePermanentDelete} lang={lang} />} />
+          <Route path="/tax-report" element={<TaxReport state={state} lang={lang} />} /> {/* ✅ 新增税务报表路由 */}
           <Route path="/documents/new" element={<DocumentForm state={state} onSave={handleSaveDoc} lang={lang} />} />
           <Route path="/documents/:id/edit" element={<DocumentForm state={state} onSave={handleSaveDoc} lang={lang} />} />
           <Route path="/products" element={<Products state={state} onAdd={p => setState({...state, products: [...(state.products || []), p]})} onUpdate={updatedP => setState({...state, products: state.products.map(p => p.id === updatedP.id ? updatedP : p)})} onDelete={id => setState({...state, products: state.products.filter(p => id !== p.id)})} lang={lang} />} />

@@ -13,7 +13,8 @@ import {
 } from 'lucide-react';
 import { DocType, AppState, Document, Customer, CompanySettings, LineItem, Product } from './types';
 import { DOC_META, NAV_ITEMS, formatCurrency } from './constants';
-import { generateDocumentPDF } from './services/pdfService';
+// --- ✅ 更新导入 ---
+import { generateDocumentPDF, generateSummaryPDF } from './services/pdfService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // --- 🌐 多语言字典 ---
@@ -243,6 +244,13 @@ const getNextDocNumber = (docs: Document[], type: DocType, prefix: string) => {
   return `${prefix}-${currentYear}-${nextSeq}`;
 };
 
+// --- ✅ 统一财务计算函数 ---
+const calculateGrandTotal = (doc: Document) => {
+  const subtotal = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
+  const tax = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
+  return Math.max(0, subtotal + tax - (doc.discount || 0));
+};
+
 const generateValidKey = (sysId: string) => {
     const sum = sysId.split('').reduce((acc, char) => {
         const num = parseInt(char);
@@ -327,9 +335,16 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
   const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
   useEffect(() => { const timer = setTimeout(() => setIsMounted(true), 250); return () => clearTimeout(timer); }, []);
   const sortedDocs = useMemo(() => [...state.documents].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [state.documents]);
-  const totalInvoiced = useMemo(() => state.documents.filter(d => d.type === DocType.INVOICE && d.status !== 'Cancelled').reduce((sum, d) => sum + d.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0), 0), [state.documents]);
+  
+  const totalInvoiced = useMemo(() => 
+    state.documents
+      .filter(d => d.type === DocType.INVOICE && d.status !== 'Cancelled')
+      .reduce((sum, d) => sum + calculateGrandTotal(d), 0)
+  , [state.documents]);
+
   const activeQuotes = state.documents.filter(d => d.type === DocType.QUOTATION && d.status !== 'Converted' && d.status !== 'Cancelled').length;
   const totalDOs = state.documents.filter(d => d.type === DocType.DELIVERY_ORDER && d.status !== 'Cancelled').length;
+  
   const chartData = useMemo(() => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const currentYear = new Date().getFullYear();
@@ -337,12 +352,46 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
     state.documents.filter(d => d.type === DocType.INVOICE && d.status !== 'Cancelled').forEach(doc => {
       const d = new Date(doc.date);
       if (d.getFullYear() === currentYear) {
-        const total = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
-        monthlyTotals[d.getMonth()] += total;
+        monthlyTotals[d.getMonth()] += calculateGrandTotal(doc);
       }
     });
     return months.map((name, i) => ({ name, val: monthlyTotals[i] }));
   }, [state.documents]);
+
+  // --- ✅ 新增：下载月度汇总报告逻辑 ---
+  const handleDownloadMonthlyReport = async () => {
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth(); 
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const periodString = `${months[currentMonth]} ${currentYear}`;
+
+    const monthDocs = state.documents.filter(doc => {
+      const d = new Date(doc.date);
+      return d.getFullYear() === currentYear && d.getMonth() === currentMonth && doc.status !== 'Cancelled';
+    });
+
+    const formattedData = monthDocs.map(doc => {
+      const subtotal = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
+      const tax = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
+      const customer = state.customers.find(c => c.id === doc.customerId);
+      return {
+        date: doc.date,
+        number: doc.number,
+        customerName: customer?.name || 'Unknown',
+        subtotal: subtotal,
+        tax: tax,
+        total: calculateGrandTotal(doc)
+      };
+    });
+
+    if (formattedData.length === 0) {
+      alert("No activity data for current month.");
+      return;
+    }
+
+    await generateSummaryPDF(formattedData, state.settings, periodString);
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-700">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-slate-200 pb-6">
@@ -367,6 +416,13 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
         <div className="xl:col-span-8 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[500px]">
            <div className="p-7 border-b border-slate-100 flex items-center justify-between">
             <div><h3 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2.5"><TrendingUp className="w-6 h-6 text-emerald-500" />{t('revenue')}</h3><p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mt-1">Monthly Billing Aggregation (MYR)</p></div>
+            {/* --- ✅ 新增：汇总报告按钮 --- */}
+            <button 
+              onClick={handleDownloadMonthlyReport}
+              className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 rounded-lg transition-all text-xs font-bold border border-slate-100 active:scale-95"
+            >
+              <Download className="w-4 h-4" /> {t('download_pdf')}
+            </button>
           </div>
           <div className="p-8 flex-1 w-full relative">
             {isMounted ? (
@@ -381,7 +437,7 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
               <div key={doc.id} className="flex items-center gap-4 p-4 hover:bg-slate-50 rounded-2xl transition-all border border-transparent hover:border-slate-100 group">
                 <div className={`w-11 h-11 rounded-xl ${DOC_META[doc.type].color} shadow-sm flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform`}>{React.cloneElement(DOC_META[doc.type].icon as React.ReactElement, { className: 'w-5 h-5' })}</div>
                 <div className="flex-1 min-w-0"><div className="flex items-center justify-between gap-2 mb-0.5"><p className="font-black text-slate-900 text-sm truncate">{doc.number}</p><p className="text-[10px] text-slate-400 font-bold uppercase shrink-0">{doc.date}</p></div><p className="text-xs text-slate-500 truncate font-semibold">{state.customers.find(c => c.id === doc.customerId)?.name}</p></div>
-                <div className="text-right shrink-0"><p className="text-sm font-black text-slate-900">{formatCurrency(doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0))}</p><span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${doc.status === 'Paid' ? 'text-emerald-600 bg-emerald-50' : doc.status === 'Cancelled' ? 'text-rose-600 bg-rose-50' : 'text-slate-400 bg-slate-100'}`}>{doc.status}</span></div>
+                <div className="text-right shrink-0"><p className="text-sm font-black text-slate-900">{formatCurrency(calculateGrandTotal(doc))}</p><span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${doc.status === 'Paid' ? 'text-emerald-600 bg-emerald-50' : doc.status === 'Cancelled' ? 'text-rose-600 bg-rose-50' : 'text-slate-400 bg-slate-100'}`}>{doc.status}</span></div>
               </div>
             ))}
           </div>
@@ -400,9 +456,6 @@ const StatCard = ({ title, value, icon, trend }: { title: string, value: string,
   </div>
 );
 
-// =========================================================
-// ✅ DocumentsList: 修改了 QT 转换逻辑
-// =========================================================
 const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, onDelete: (id: string) => void, onConvert: (doc: Document, toType: DocType) => void, lang: Lang }) => {
   const [filter, setFilter] = useState<DocType | 'ALL'>('ALL');
   const [search, setSearch] = useState('');
@@ -453,7 +506,7 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
             <tbody className="divide-y divide-slate-100">
               {filteredDocs.map(doc => {
                 const customer = state.customers.find(c => c.id === doc.customerId);
-                const total = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
+                const total = calculateGrandTotal(doc);
                 return (
                   <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="px-6 py-4 font-bold text-slate-900 whitespace-nowrap">{doc.number}</td>
@@ -465,13 +518,10 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
                         <button onClick={() => handlePdfDownload(doc)} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('download_pdf')}><Download className="w-4 h-4" /></button>
                         <button onClick={() => navigate(`/documents/${doc.id}/edit`)} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title={t('edit')}><Pencil className="w-4 h-4" /></button>
                         
-                        {/* 🟢 Convert: QUOTATION -> PROFORMA */}
                         {doc.type === DocType.QUOTATION && ( <button onClick={() => onConvert(doc, DocType.PROFORMA)} className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title={t('convert_pi')}><FileText className="w-4 h-4" /></button>)}
                         
-                        {/* 🟣 Convert: QUOTATION -> DO (新) 或 PROFORMA -> DO */}
                         {(doc.type === DocType.QUOTATION || doc.type === DocType.PROFORMA) && (<button onClick={() => onConvert(doc, DocType.DELIVERY_ORDER)} className="p-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all" title={t('convert_do')}><Truck className="w-4 h-4" /></button>)}
 
-                        {/* 🟢 Convert: PROFORMA -> INV 或 DELIVERY_ORDER -> INV (移除了 QUOTATION) */}
                         {(doc.type === DocType.PROFORMA || doc.type === DocType.DELIVERY_ORDER) && (<button onClick={() => onConvert(doc, DocType.INVOICE)} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('convert_inv')}><Receipt className="w-4 h-4" /></button>)}
                         
                         <button onClick={() => onDelete(doc.id)} className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title={t('delete')}><Trash2 className="w-4 h-4" /></button>
@@ -729,9 +779,6 @@ const Customers = ({ state, onAdd, onUpdate, onDelete, lang }: { state: AppState
   );
 };
 
-// =========================================================
-// ✅ Products: 增加了 Tax % 选项 (Option)
-// =========================================================
 const Products = ({ state, onAdd, onUpdate, onDelete, lang }: { state: AppState, onAdd: (p: Product) => void, onUpdate: (p: Product) => void, onDelete: (id: string) => void, lang: Lang }) => {
     const [isAdding, setIsAdding] = useState(false);
     const [newP, setNewP] = useState<Partial<Product>>({});
@@ -758,7 +805,7 @@ const WorkflowStage = ({ title, icon, docs, state, onConvert, onUpdateStatus, ta
     <div className="flex items-center justify-between mb-6"><h3 className="text-lg font-extrabold flex items-center gap-2 text-slate-800 uppercase tracking-tight">{icon}{title}</h3><span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-xs font-black">{docs.length}</span></div>
     <div className="space-y-4 flex-1 overflow-y-auto max-h-[600px] no-scrollbar pr-1">{docs.length > 0 ? docs.map(doc => {
           const customer = state.customers.find(c => c.id === doc.customerId);
-          const total = doc.items.reduce((sum, i) => sum + (i.quantity * i.unitPrice), 0);
+          const total = calculateGrandTotal(doc);
           return (<div key={doc.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200 group hover:border-emerald-300 transition-all shadow-sm flex flex-col gap-3"><div className="flex justify-between items-start"><div className="min-w-0"><p className="font-black text-slate-900">{doc.number}</p><p className="text-xs text-slate-500 truncate font-medium">{customer?.name}</p></div><p className="text-sm font-black text-slate-800">{formatCurrency(total)}</p></div><div className="flex flex-wrap gap-2 pt-2">{targetType && actionLabel && ( <button onClick={() => onConvert(doc, targetType)} className="flex-1 py-2 bg-slate-900 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase transition-all flex items-center justify-center gap-1 shadow-sm">{actionLabel} <ArrowRight className="w-3 h-3" /></button>)}</div></div>);
       }) : <div className="flex flex-col items-center justify-center py-12 text-slate-300 opacity-50"><Clock className="w-10 h-10 mb-2" /><p className="text-xs font-black uppercase tracking-widest">Queue Empty</p></div>}</div>
   </div>

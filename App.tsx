@@ -416,7 +416,7 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
     const customer = state.customers.find(c => c.id === doc.customerId);
     if (customer) {
       try { 
-        const cleanNumber = doc.number.replace(/[^a-zA-Z0-9]/g, '_');
+        const cleanNumber = doc.number.replace(/[^a-zA-Z0-9-]/g, '_');
         const sanitizedDoc = {
           ...doc,
           number: cleanNumber.trim()

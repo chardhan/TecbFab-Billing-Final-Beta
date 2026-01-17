@@ -168,7 +168,7 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
     docPdf.text('TOTAL :', labelX, finalY + 22);
     docPdf.text(formatCurrency(grandTotal), valueX, finalY + 22, { align: 'right' });
     
-    docPdf.setFontSize(6).setFont('helvetica', 'bold');
+    docPdf.setFontSize(4).setFont('helvetica', 'bold');
     docPdf.text(amountToWords(grandTotal), 20, finalY + 22);
     
     finalY += 35;

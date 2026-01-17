@@ -216,7 +216,8 @@ const DEFAULT_SETTINGS: CompanySettings = {
   bankName: "Maybank",
   bankAccount: "5140-1234-5678",
   sstRate: 0.08,
-  logo: ""
+  logo: "",
+  signature: "" // --- ✅ 1. 新增签名状态 ---
 };
 
 const DEFAULT_CUSTOMERS: Customer[] = [
@@ -598,11 +599,27 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
   const [newPass, setNewPass] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const sigInputRef = useRef<HTMLInputElement>(null); // --- ✅ 2. 新增 Ref ---
+
   const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) { if (file.size > 200 * 1024) { alert("Logo file is too large."); return; } const reader = new FileReader(); reader.onloadend = () => { setSettings({ ...settings, logo: reader.result as string }); }; reader.readAsDataURL(file); }
   };
+
+  // --- ✅ 3. 新增处理函数 ---
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 200 * 1024) { alert("Signature file is too large."); return; }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setSettings({ ...settings, signature: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) onImport(file); };
   const handleSafeReset = () => { if (confirm(t('factory_reset_confirm_msg'))) { const input = prompt(t('enter_password_verify')); if (input === adminPassword) { onReset(); alert(t('data_wiped')); } } };
   return (
@@ -616,7 +633,22 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-8 space-y-8">
           <div className="flex flex-col sm:flex-row items-center gap-8 pb-8 border-b border-slate-100">
-            <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-300 relative overflow-hidden group cursor-pointer shrink-0">{settings.logo ? <img src={settings.logo} alt="Logo" className="w-full h-full object-contain p-2" /> : <ImageIcon className="w-8 h-8 opacity-20" />}<div className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold"><Plus className="w-4 h-4 mb-1" /><span>{settings.logo ? 'CHANGE' : 'UPLOAD'}</span></div><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
+            {/* Logo Section */}
+            <div className="flex flex-col items-center sm:items-start gap-2">
+                 <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Company Logo</label>
+                 <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-300 relative overflow-hidden group cursor-pointer shrink-0">{settings.logo ? <img src={settings.logo} alt="Logo" className="w-full h-full object-contain p-2" /> : <ImageIcon className="w-8 h-8 opacity-20" />}<div className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold"><Plus className="w-4 h-4 mb-1" /><span>{settings.logo ? 'CHANGE' : 'UPLOAD'}</span></div><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
+            </div>
+
+            {/* --- ✅ 4. 新增签名上传 UI --- */}
+            <div className="flex flex-col items-center sm:items-start gap-2">
+              <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Digital Signature</label>
+              <div onClick={() => sigInputRef.current?.click()} className="w-48 h-24 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-300 relative overflow-hidden group cursor-pointer shrink-0">
+                {settings.signature ? <img src={settings.signature} alt="Signature" className="w-full h-full object-contain p-2" /> : <Pencil className="w-8 h-8 opacity-20" />}
+                <div className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold"><Plus className="w-4 h-4 mb-1" /><span>{settings.signature ? 'CHANGE' : 'UPLOAD'}</span></div>
+                <input type="file" ref={sigInputRef} onChange={handleSignatureUpload} className="hidden" accept="image/*" />
+              </div>
+            </div>
+
             <div className="flex-1 text-center sm:text-left"><h3 className="text-xl font-extrabold text-slate-900">{settings.name || "Business Name"}</h3><p className="text-sm text-slate-500 font-medium">Your identity on all generated PDF documents.</p></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

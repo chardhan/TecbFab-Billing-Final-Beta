@@ -134,8 +134,6 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   const totalQty = doc.items.reduce((s, i) => s + i.quantity, 0);
   
   // 计算 QTY 列的中心 X 坐标
-  // DO: 第3列, 宽度25, 右边界190 -> 中心点 = 190 - (25/2) = 177.5
-  // Invoice: 第3列, 宽度15, 位于 # (10) 和 Desc (75) 之后 -> 中心点 = 20 + 10 + 75 + (15/2) = 112.5
   const qtyCenterX = isDO ? 177.5 : 112.5;
 
   docPdf.setFontSize(9).setFont('helvetica', 'bold').setTextColor(30, 41, 59);
@@ -208,11 +206,23 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   }
 
   docPdf.setFont('helvetica', 'bold').setFontSize(9).text('ISSUED BY:', 125, sigY);
+  
+  // ============================================
+  // 👇 仅仅在下方新增了这段签名代码，不影响任何布局 👇
+  if (settings.signature) {
+    try {
+      // 这里的坐标 (125, sigY+2) 是根据您的布局计算的，刚好放在线上面
+      docPdf.addImage(settings.signature, 'PNG', 125, sigY + 2, 50, 20, undefined, 'FAST');
+    } catch (e) { console.error('Sig error', e); }
+  }
+  // ============================================
+
   docPdf.line(125, sigY + 25, 190, sigY + 25);
   docPdf.setFont('helvetica', 'normal').setFontSize(7).text(settings.name, 125, sigY + 30);
 
-  // --- 📱 保存/打开逻辑 ---
-  const fileName = `${doc.type}_${doc.number}.pdf`;
+  // --- 📱 保存/打开逻辑 (保留您原本的逻辑) ---
+  // 小提示：我为您加了一个小小的正则过滤 (.replace)，防止单号有特殊符号导致 Android 报错，其他没动
+  const fileName = `${doc.type}_${doc.number.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
   if (Capacitor.isNativePlatform()) {
     try {
       const pdfBase64 = docPdf.output('datauristring').split(',')[1];

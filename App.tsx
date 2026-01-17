@@ -16,6 +16,7 @@ import { DOC_META, NAV_ITEMS, formatCurrency } from './constants';
 import { generateDocumentPDF } from './services/pdfService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
+// --- 🌐 多语言字典 ---
 type Lang = 'en' | 'zh' | 'ms';
 
 const TRANSLATIONS = {
@@ -366,8 +367,7 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
            <div className="p-7 border-b border-slate-100 flex items-center justify-between">
             <div><h3 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2.5"><TrendingUp className="w-6 h-6 text-emerald-500" />{t('revenue')}</h3><p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mt-1">Monthly Billing Aggregation (MYR)</p></div>
           </div>
-          {/* 核心修复：图表容器添加最小高度 */}
-          <div className="p-8 flex-1 w-full relative min-h-[400px]">
+          <div className="p-8 flex-1 w-full relative">
             {isMounted ? (
               <ResponsiveContainer width="100%" height="100%"><BarChart data={chartData} margin={{ top: 20, right: 30, left: 10, bottom: 0 }}><CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 700}} dy={10} /><YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12, fontWeight: 700}} dx={-10} /><Tooltip cursor={{fill: '#f8fafc', radius: 8}} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)', padding: '16px' }} /><Bar dataKey="val" radius={[8, 8, 0, 0]} barSize={50}>{chartData.map((entry, index) => (<Cell key={`cell-${index}`} fill={entry.val > 0 ? '#10b981' : '#e2e8f0'} />))}</Bar></BarChart></ResponsiveContainer>
             ) : <div className="w-full h-full bg-slate-50 animate-pulse rounded-2xl flex items-center justify-center text-slate-400 text-sm font-black uppercase tracking-widest">Computing Visual Engine...</div>}
@@ -412,12 +412,11 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
     return matchesFilter && matchesSearch;
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [state.documents, filter, search, state.customers]);
 
-  // 核心修复：文件名清理允许横杠 "-"
   const handlePdfDownload = async (doc: Document) => {
     const customer = state.customers.find(c => c.id === doc.customerId);
     if (customer) {
       try { 
-        const cleanNumber = doc.number.replace(/[^a-zA-Z0-9-]/g, '_');
+        const cleanNumber = doc.number.replace(/[^a-zA-Z0-9]/g, '_');
         const sanitizedDoc = {
           ...doc,
           number: cleanNumber.trim()
@@ -463,7 +462,6 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
                         <button onClick={() => navigate(`/documents/${doc.id}/edit`)} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title={t('edit')}><Pencil className="w-4 h-4" /></button>
                         {doc.type === DocType.QUOTATION && ( <button onClick={() => onConvert(doc, DocType.PROFORMA)} className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title={t('convert_pi')}><FileText className="w-4 h-4" /></button>)}
                         {(doc.type === DocType.QUOTATION || doc.type === DocType.PROFORMA || doc.type === DocType.DELIVERY_ORDER) && (<button onClick={() => onConvert(doc, DocType.INVOICE)} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('convert_inv')}><Receipt className="w-4 h-4" /></button>)}
-                        {/* 核心修复：仅允许 PI 转换为 DO，移除 INV 到 DO */}
                         {doc.type === DocType.PROFORMA && (<button onClick={() => onConvert(doc, DocType.DELIVERY_ORDER)} className="p-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all" title={t('convert_do')}><Truck className="w-4 h-4" /></button>)}
                         <button onClick={() => onDelete(doc.id)} className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title={t('delete')}><Trash2 className="w-4 h-4" /></button>
                       </div>

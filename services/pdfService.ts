@@ -168,7 +168,7 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
     docPdf.text('TOTAL :', labelX, finalY + 22);
     docPdf.text(formatCurrency(grandTotal), valueX, finalY + 22, { align: 'right' });
     
-    docPdf.setFontSize(4).setFont('helvetica', 'bold');
+    docPdf.setFontSize(6).setFont('helvetica', 'bold');
     docPdf.text(amountToWords(grandTotal), 20, finalY + 22);
     
     finalY += 35;
@@ -177,8 +177,8 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   // --- 7. Footer & Signatures ---
   if (doc.notes) {
     if (finalY > sigY - 10) { docPdf.addPage(); finalY = 20; }
-    docPdf.setFontSize(6).setFont('helvetica', 'bold').text('Notes:', 20, finalY);
-    const labelWidth = docPdf.getTextWidth('Notes:');
+    docPdf.setFontSize(6).setFont('helvetica', 'bold').text('NOTES: ', 20, finalY);
+    const labelWidth = docPdf.getTextWidth('NOTES: ');
     docPdf.setFont('helvetica', 'normal');
     const contentX = 20 + labelWidth + 1.5; 
     const maxWidth = 190 - contentX;

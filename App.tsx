@@ -217,7 +217,7 @@ const DEFAULT_SETTINGS: CompanySettings = {
   bankAccount: "5140-1234-5678",
   sstRate: 0.08,
   logo: "",
-  signature: "" // --- ✅ 1. 新增签名状态 ---
+  signature: "" 
 };
 
 const DEFAULT_CUSTOMERS: Customer[] = [
@@ -479,42 +479,74 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
   );
 };
 
+// =========================================================
+// ✅ DocumentForm: 已包含 Qty>=0, Price>=0.01, Tax=0 验证
+// =========================================================
 const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: Document) => void, lang: Lang }) => {
   const navigate = useNavigate();
   const { id } = useParams();
   const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
+  
   const initialData = useMemo(() => {
     const type = DocType.QUOTATION;
     return { type, number: getNextDocNumber(state.documents, type, DOC_META[type].prefix) };
   }, [state.documents]);
+  
   const [doc, setDoc] = useState<Partial<Document>>({
     id: Math.random().toString(36).substr(2, 9),
     type: initialData.type,
     number: initialData.number,
     date: new Date().toISOString().split('T')[0],
     customerId: state.customers[0]?.id || '',
-    items: [{ id: Math.random().toString(), description: '', quantity: 1, unitPrice: 0, taxRate: state.settings.sstRate }], 
+    items: [{ id: Math.random().toString(), description: '', quantity: 0, unitPrice: 0, taxRate: 0 }], 
     status: 'Draft',
     discount: 0,
   });
+
   useEffect(() => { if (id) { const existingDoc = state.documents.find(d => d.id === id); if (existingDoc) setDoc(existingDoc); } }, [id, state.documents]);
   const subtotal = useMemo(() => doc.items?.reduce((s, i) => s + (i.quantity * i.unitPrice), 0) || 0, [doc.items]);
   const tax = useMemo(() => doc.items?.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0) || 0, [doc.items]);
   const total = subtotal + tax - (doc.discount || 0);
-  const addItem = () => { setDoc(prev => ({ ...prev, items: [...(prev.items || []), { id: Math.random().toString(), description: '', quantity: 1, unitPrice: 0, taxRate: state.settings.sstRate }] })); };
+  
+  const addItem = () => { setDoc(prev => ({ ...prev, items: [...(prev.items || []), { id: Math.random().toString(), description: '', quantity: 0, unitPrice: 0, taxRate: 0 }] })); };
+  
   const removeItem = (id: string) => { setDoc(prev => ({ ...prev, items: prev.items?.filter(i => i.id !== id) })); };
   const updateItem = (id: string, field: keyof LineItem, value: any) => { setDoc(prev => ({ ...prev, items: prev.items?.map(i => i.id === id ? { ...i, [field]: value } : i) })); };
   const handleProductSelect = (itemId: string, productId: string) => {
     const product = (state.products || []).find(p => p.id === productId);
     if (product) { setDoc(prev => ({ ...prev, items: prev.items?.map(i => i.id === itemId ? { ...i, description: product.description || product.name, unitPrice: product.price, taxRate: product.taxRate !== undefined ? product.taxRate : state.settings.sstRate } : i) })); }
   };
+  
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!doc.customerId) { alert("Please select a customer / 请选择客户"); return; }
+    if (!doc.items || doc.items.length === 0) { alert("Please add at least one item / 请至少添加一项"); return; }
+
+    for (let i = 0; i < doc.items.length; i++) {
+        const item = doc.items[i];
+        const lineNum = i + 1;
+
+        if (!item.description || item.description.trim() === "") {
+            alert(`Row ${lineNum} Error: Description is missing.\n第 ${lineNum} 行错误：必须填写项目描述。`);
+            return;
+        }
+        if (!item.quantity || item.quantity <= 0) {
+            alert(`Row ${lineNum} Error: Quantity must be greater than 0.\n第 ${lineNum} 行错误：数量必须大于 0。`);
+            return;
+        }
+        if (item.unitPrice === undefined || item.unitPrice < 0.01) {
+            alert(`Row ${lineNum} Error: Price must be at least 0.01.\n第 ${lineNum} 行错误：价格必须至少为 0.01。`);
+            return;
+        }
+    }
+
     if (doc.customerId && doc.items && doc.items.length > 0) {
       onSave({ ...doc, id: doc.id || Math.random().toString(36).substr(2, 9) } as Document);
       navigate('/documents');
     }
   };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <header className="flex items-center gap-4">
@@ -599,7 +631,7 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
   const [newPass, setNewPass] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
-  const sigInputRef = useRef<HTMLInputElement>(null); // --- ✅ 2. 新增 Ref ---
+  const sigInputRef = useRef<HTMLInputElement>(null); 
 
   const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -607,7 +639,6 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
     if (file) { if (file.size > 200 * 1024) { alert("Logo file is too large."); return; } const reader = new FileReader(); reader.onloadend = () => { setSettings({ ...settings, logo: reader.result as string }); }; reader.readAsDataURL(file); }
   };
 
-  // --- ✅ 3. 新增处理函数 ---
   const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -639,7 +670,7 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
                  <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-300 relative overflow-hidden group cursor-pointer shrink-0">{settings.logo ? <img src={settings.logo} alt="Logo" className="w-full h-full object-contain p-2" /> : <ImageIcon className="w-8 h-8 opacity-20" />}<div className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold"><Plus className="w-4 h-4 mb-1" /><span>{settings.logo ? 'CHANGE' : 'UPLOAD'}</span></div><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
             </div>
 
-            {/* --- ✅ 4. 新增签名上传 UI --- */}
+            {/* Signature Upload UI */}
             <div className="flex flex-col items-center sm:items-start gap-2">
               <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Digital Signature</label>
               <div onClick={() => sigInputRef.current?.click()} className="w-48 h-24 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-300 relative overflow-hidden group cursor-pointer shrink-0">
@@ -691,14 +722,26 @@ const Customers = ({ state, onAdd, onUpdate, onDelete, lang }: { state: AppState
   );
 };
 
+// =========================================================
+// ✅ Products: 增加了 Tax % 选项 (Option)
+// =========================================================
 const Products = ({ state, onAdd, onUpdate, onDelete, lang }: { state: AppState, onAdd: (p: Product) => void, onUpdate: (p: Product) => void, onDelete: (id: string) => void, lang: Lang }) => {
     const [isAdding, setIsAdding] = useState(false);
     const [newP, setNewP] = useState<Partial<Product>>({});
     const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
     return (
       <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500"><header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"><div><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{t('product_catalog')}</h1><p className="text-slate-500">Manage products.</p></div><button onClick={() => { setNewP({}); setIsAdding(true); }} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg active:scale-95 transition-all"><Plus className="w-5 h-5" /> {t('new_product')}</button></header>
-        {isAdding && (<div className="bg-white p-8 rounded-2xl border-2 border-emerald-500 shadow-2xl space-y-6 animate-in zoom-in-95 duration-300"><h3 className="text-xl font-extrabold">{newP.id ? t('edit') : t('new_product')}</h3><div className="grid grid-cols-1 md:grid-cols-2 gap-6"><div className="space-y-1"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Name</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newP.name || ''} onChange={e => setNewP({...newP, name: e.target.value})} /></div><div className="space-y-1"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Price</label><input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newP.price || ''} onChange={e => setNewP({...newP, price: parseFloat(e.target.value)})} /></div><div className="md:col-span-2 space-y-1"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Description</label><textarea className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold h-24 resize-none" value={newP.description || ''} onChange={e => setNewP({...newP, description: e.target.value})} /></div></div><div className="flex justify-end gap-3 pt-4 border-t border-slate-100"><button onClick={() => setIsAdding(false)} className="px-6 py-2.5 text-slate-500 font-bold">{t('discard')}</button><button onClick={() => { if(!newP.name) return; if (newP.id) onUpdate(newP as Product); else onAdd({...newP as Product, id: Math.random().toString(36).substr(2, 9), price: newP.price || 0}); setIsAdding(false); }} className="px-8 py-2.5 bg-emerald-600 text-white font-extrabold rounded-xl">{t('save')}</button></div></div>)}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{(state.products || []).map(p => (<div key={p.id} className="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative overflow-hidden"><div className="flex justify-between items-start mb-4"><div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-lg"><Package className="w-6 h-6" /></div><div className="flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><button onClick={() => { setNewP(p); setIsAdding(true); }} className="p-2 text-slate-300 hover:text-blue-500 rounded-lg"><Pencil className="w-4 h-4" /></button><button onClick={() => onDelete(p.id)} className="p-2 text-slate-300 hover:text-rose-500 rounded-lg"><Trash2 className="w-4 h-4" /></button></div></div><h3 className="font-extrabold text-slate-900 text-lg mb-1 leading-tight">{p.name}</h3><p className="text-2xl font-black text-slate-900 mb-4">{formatCurrency(p.price)}</p><p className="text-sm text-slate-500 font-medium line-clamp-2 min-h-[2.5rem] leading-relaxed mt-2">{p.description || 'No description.'}</p></div>))}</div>
+        {isAdding && (<div className="bg-white p-8 rounded-2xl border-2 border-emerald-500 shadow-2xl space-y-6 animate-in zoom-in-95 duration-300"><h3 className="text-xl font-extrabold">{newP.id ? t('edit') : t('new_product')}</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="space-y-1"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Name</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newP.name || ''} onChange={e => setNewP({...newP, name: e.target.value})} /></div>
+            <div className="space-y-1"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Price</label><input type="number" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newP.price || ''} onChange={e => setNewP({...newP, price: parseFloat(e.target.value)})} /></div>
+            <div className="space-y-1"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Tax %</label><select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none" value={newP.taxRate !== undefined ? newP.taxRate : 0} onChange={e => setNewP({...newP, taxRate: parseFloat(e.target.value)})}>
+                <option value={0}>0%</option><option value={0.05}>5%</option><option value={0.06}>6%</option><option value={0.08}>8%</option><option value={0.10}>10%</option>
+            </select></div>
+            <div className="md:col-span-3 space-y-1"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Description</label><textarea className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold h-24 resize-none" value={newP.description || ''} onChange={e => setNewP({...newP, description: e.target.value})} /></div>
+        </div>
+        <div className="flex justify-end gap-3 pt-4 border-t border-slate-100"><button onClick={() => setIsAdding(false)} className="px-6 py-2.5 text-slate-500 font-bold">{t('discard')}</button><button onClick={() => { if(!newP.name) return; if (newP.id) onUpdate(newP as Product); else onAdd({...newP as Product, id: Math.random().toString(36).substr(2, 9), price: newP.price || 0, taxRate: newP.taxRate || 0}); setIsAdding(false); }} className="px-8 py-2.5 bg-emerald-600 text-white font-extrabold rounded-xl">{t('save')}</button></div></div>)}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{(state.products || []).map(p => (<div key={p.id} className="bg-white p-7 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative overflow-hidden"><div className="flex justify-between items-start mb-4"><div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center font-extrabold text-lg"><Package className="w-6 h-6" /></div><div className="flex gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity"><button onClick={() => { setNewP(p); setIsAdding(true); }} className="p-2 text-slate-300 hover:text-blue-500 rounded-lg"><Pencil className="w-4 h-4" /></button><button onClick={() => onDelete(p.id)} className="p-2 text-slate-300 hover:text-rose-500 rounded-lg"><Trash2 className="w-4 h-4" /></button></div></div><h3 className="font-extrabold text-slate-900 text-lg mb-1 leading-tight">{p.name}</h3><div className="flex items-center gap-2 mb-4"><p className="text-2xl font-black text-slate-900">{formatCurrency(p.price)}</p>{p.taxRate !== undefined && p.taxRate > 0 && <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{(p.taxRate * 100).toFixed(0)}% Tax</span>}</div><p className="text-sm text-slate-500 font-medium line-clamp-2 min-h-[2.5rem] leading-relaxed mt-2">{p.description || 'No description.'}</p></div>))}</div>
       </div>
     );
 };

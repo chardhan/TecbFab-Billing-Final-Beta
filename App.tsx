@@ -12,7 +12,8 @@ import {
   ShieldCheck, Key, Globe
 } from 'lucide-react';
 import { DocType, AppState, Document, Customer, CompanySettings, LineItem, Product } from './types';
-import { DOC_META, NAV_ITEMS, formatCurrency } from './constants';
+// --- ✅ 更新导入：增加 roundTo ---
+import { DOC_META, NAV_ITEMS, formatCurrency, roundTo } from './constants';
 // --- ✅ 更新导入 ---
 import { generateDocumentPDF, generateSummaryPDF } from './services/pdfService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -244,11 +245,12 @@ const getNextDocNumber = (docs: Document[], type: DocType, prefix: string) => {
   return `${prefix}-${currentYear}-${nextSeq}`;
 };
 
-// --- ✅ 统一财务计算函数 ---
+// --- ✅ 统一财务计算函数 (已引入精确四舍五入) ---
 const calculateGrandTotal = (doc: Document) => {
-  const subtotal = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
-  const tax = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
-  return Math.max(0, subtotal + tax - (doc.discount || 0));
+  const subtotal = doc.items.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice), 0);
+  const tax = doc.items.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
+  const total = roundTo(subtotal + tax - (doc.discount || 0));
+  return Math.max(0, total);
 };
 
 const generateValidKey = (sysId: string) => {
@@ -358,7 +360,7 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
     return months.map((name, i) => ({ name, val: monthlyTotals[i] }));
   }, [state.documents]);
 
-  // --- ✅ 新增：下载月度汇总报告逻辑 ---
+  // --- ✅ 下载月度汇总报告逻辑 (计算逻辑已同步 roundTo) ---
   const handleDownloadMonthlyReport = async () => {
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth(); 
@@ -371,8 +373,8 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
     });
 
     const formattedData = monthDocs.map(doc => {
-      const subtotal = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
-      const tax = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
+      const subtotal = doc.items.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice), 0);
+      const tax = doc.items.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
       const customer = state.customers.find(c => c.id === doc.customerId);
       return {
         date: doc.date,
@@ -416,7 +418,7 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
         <div className="xl:col-span-8 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[500px]">
            <div className="p-7 border-b border-slate-100 flex items-center justify-between">
             <div><h3 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2.5"><TrendingUp className="w-6 h-6 text-emerald-500" />{t('revenue')}</h3><p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mt-1">Monthly Billing Aggregation (MYR)</p></div>
-            {/* --- ✅ 新增：汇总报告按钮 --- */}
+            {/* --- ✅ 汇总报告按钮 --- */}
             <button 
               onClick={handleDownloadMonthlyReport}
               className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 rounded-lg transition-all text-xs font-bold border border-slate-100 active:scale-95"
@@ -561,9 +563,11 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
   });
 
   useEffect(() => { if (id) { const existingDoc = state.documents.find(d => d.id === id); if (existingDoc) setDoc(existingDoc); } }, [id, state.documents]);
-  const subtotal = useMemo(() => doc.items?.reduce((s, i) => s + (i.quantity * i.unitPrice), 0) || 0, [doc.items]);
-  const tax = useMemo(() => doc.items?.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0) || 0, [doc.items]);
-  const total = subtotal + tax - (doc.discount || 0);
+  
+  // --- ✅ 修正：DocumentForm 中的金额计算已同步 roundTo ---
+  const subtotal = useMemo(() => doc.items?.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice), 0) || 0, [doc.items]);
+  const tax = useMemo(() => doc.items?.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice * (i.taxRate || 0)), 0) || 0, [doc.items]);
+  const total = roundTo(subtotal + tax - (doc.discount || 0));
   
   const addItem = () => { setDoc(prev => ({ ...prev, items: [...(prev.items || []), { id: Math.random().toString(), description: '', quantity: 0, unitPrice: 0, taxRate: 0 }] })); };
   

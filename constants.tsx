@@ -6,6 +6,12 @@ import { DocType } from './types';
 
 export const SST_RATE = 0.08;
 
+// --- ✅ 新增：财务精确四舍五入辅助函数 ---
+export const roundTo = (num: number, decimals: number = 2): number => {
+  const p = Math.pow(10, decimals);
+  return Math.round((num + Number.EPSILON) * p) / p;
+};
+
 export const DOC_META = {
   [DocType.QUOTATION]: {
     label: 'Quotation',

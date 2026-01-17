@@ -360,7 +360,16 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
     return months.map((name, i) => ({ name, val: monthlyTotals[i] }));
   }, [state.documents]);
 
-  // --- ✅ 下载月度汇总报告逻辑 (计算逻辑已同步 roundTo) ---
+  // --- ✅ 自动备份提醒逻辑 ---
+  const daysSinceBackup = useMemo(() => {
+    if (!state.lastBackupDate) return 999; // 从未备份
+    const last = new Date(state.lastBackupDate).getTime();
+    const now = new Date().getTime();
+    return Math.floor((now - last) / (1000 * 60 * 60 * 24));
+  }, [state.lastBackupDate]);
+
+  const showBackupWarning = daysSinceBackup >= 7;
+
   const handleDownloadMonthlyReport = async () => {
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth(); 
@@ -396,6 +405,22 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-700">
+      {/* ✅ 备份提醒横幅 */}
+      {showBackupWarning && (
+        <div className="bg-amber-50 border-2 border-amber-200 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-amber-100 rounded-xl text-amber-600"><AlertCircle className="w-6 h-6" /></div>
+            <div>
+              <p className="font-black text-amber-900 text-sm">数据安全提醒 / Backup Required</p>
+              <p className="text-amber-700 text-xs font-bold mt-0.5">
+                {daysSinceBackup > 30 ? '你已经很久没有备份数据了。' : `你已经有 ${daysSinceBackup} 天没有备份数据了。`} 请前往设置进行备份。
+              </p>
+            </div>
+          </div>
+          <Link to="/settings" className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 shadow-lg shadow-amber-600/20">立即备份</Link>
+        </div>
+      )}
+
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-slate-200 pb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -850,12 +875,13 @@ const App = () => {
   });
   const [isActivated, setIsActivated] = useLocalStorage('techfab_license_active', false);
   const [licenseKeyInput, setLicenseKeyInput] = useState('');
-  const [state, setState] = useLocalStorage<AppState>('techfab_billing_db_v1', { documents: [], customers: DEFAULT_CUSTOMERS, products: DEFAULT_PRODUCTS, settings: DEFAULT_SETTINGS });
+  const [state, setState] = useLocalStorage<AppState>('techfab_billing_db_v1', { documents: [], customers: DEFAULT_CUSTOMERS, products: DEFAULT_PRODUCTS, settings: DEFAULT_SETTINGS, lastBackupDate: '' });
   const handleSaveDoc = (doc: Document) => { setState(prev => { const exists = prev.documents.some(d => d.id === doc.id); return exists ? { ...prev, documents: prev.documents.map(d => d.id === doc.id ? doc : d) } : { ...prev, documents: [doc, ...prev.documents] }; }); };
   const handleUpdateDocStatus = (id: string, status: Document['status']) => { setState(prev => ({ ...prev, documents: prev.documents.map(d => d.id === id ? { ...d, status } : d) })); };
   const handleDeleteDoc = (id: string) => { if (window.confirm('Erase this record?')) { setState(prev => ({ ...prev, documents: prev.documents.filter(d => d.id !== id) })); } };
   const handleConvertDoc = (doc: Document, toType: DocType) => { const nextNum = getNextDocNumber(state.documents, toType, DOC_META[toType].prefix); const newDoc: Document = { ...doc, id: Math.random().toString(36).substr(2, 9), type: toType, number: nextNum, date: new Date().toISOString().split('T')[0], status: 'Draft', notes: `Ref: ${doc.number}${doc.notes ? '\n' + doc.notes : ''}` }; setState(prev => ({ ...prev, documents: [newDoc, ...prev.documents.map(d => d.id === doc.id ? { ...d, status: 'Converted' } : d)] })); alert(`Converted to ${DOC_META[toType].label}.`); };
-  const handleResetData = () => { Preferences.clear(); setState({ documents: [], customers: DEFAULT_CUSTOMERS, products: DEFAULT_PRODUCTS, settings: DEFAULT_SETTINGS }); window.location.reload(); };
+  const handleResetData = () => { Preferences.clear(); setState({ documents: [], customers: DEFAULT_CUSTOMERS, products: DEFAULT_PRODUCTS, settings: DEFAULT_SETTINGS, lastBackupDate: '' }); window.location.reload(); };
+  
   const handleExportData = async () => {
     try {
       const dataStr = JSON.stringify(state, null, 2);
@@ -871,8 +897,13 @@ const App = () => {
         linkElement.setAttribute('download', fileName);
         linkElement.click();
       }
+      
+      // ✅ 导出成功后更新备份日期
+      setState(prev => ({ ...prev, lastBackupDate: new Date().toISOString() }));
+      
     } catch (err) { alert("Export failed."); }
   };
+
   const handleImportData = (file: File) => { const reader = new FileReader(); reader.onload = (e) => { try { const importedState = JSON.parse(e.target?.result as string) as AppState; if (confirm("Restore?")) { setState(importedState); alert("Restored!"); } } catch (err) { alert("Failed."); } }; reader.readAsText(file); };
   const handleActivate = () => { if (licenseKeyInput === generateValidKey(systemId)) { setIsActivated(true); alert('Activated!'); } };
   const handleLogout = () => { setIsAuthenticated(false); setPasswordInput(''); };

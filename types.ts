@@ -50,6 +50,7 @@ export interface CompanySettings {
 export interface Document {
   id: string;
   type: DocType;
+  isDeleted?: boolean;
   number: string;
   date: string;
   customerId: string;

@@ -9,12 +9,11 @@ import {
   Download, Copy, Trash2, Settings as SettingsIcon, CheckCircle2, Lock, Receipt, 
   Truck, ArrowRightLeft, ArrowRight, Menu, X, Image as ImageIcon, Clock, 
   CheckCircle, CreditCard, Ban, Activity, CalendarDays, Pencil, Package, 
-  ShieldCheck, Key, Globe
+  ShieldCheck, Key, Globe, RotateCcw, Trash
 } from 'lucide-react';
 import { DocType, AppState, Document, Customer, CompanySettings, LineItem, Product } from './types';
-// --- ✅ 更新导入：增加 roundTo ---
+// --- ✅ 保持常量导入 ---
 import { DOC_META, NAV_ITEMS, formatCurrency, roundTo } from './constants';
-// --- ✅ 更新导入 ---
 import { generateDocumentPDF, generateSummaryPDF } from './services/pdfService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -29,6 +28,7 @@ const TRANSLATIONS = {
     customers: "Customers",
     workflow: "Workflow",
     settings: "Settings",
+    recycle_bin: "Recycle Bin",
     logout: "Logout",
     system_overview: "System Overview",
     new_transaction: "New Transaction",
@@ -48,6 +48,9 @@ const TRANSLATIONS = {
     save: "Save",
     discard: "Discard",
     delete: "Delete",
+    restore: "Restore",
+    perm_delete: "Delete Permanently",
+    no_deleted_docs: "Recycle Bin is empty",
     convert_inv: "Convert to Invoice",
     convert_do: "Convert to DO",
     convert_pi: "Convert to Pro-Forma",
@@ -88,6 +91,7 @@ const TRANSLATIONS = {
     customers: "客户通讯录",
     workflow: "工作流",
     settings: "系统设置",
+    recycle_bin: "回收站",
     logout: "退出登录",
     system_overview: "系统概览",
     new_transaction: "新建交易",
@@ -107,6 +111,9 @@ const TRANSLATIONS = {
     save: "保存",
     discard: "放弃",
     delete: "删除",
+    restore: "恢复",
+    perm_delete: "永久删除",
+    no_deleted_docs: "回收站为空",
     convert_inv: "转为发票",
     convert_do: "转为发货单",
     convert_pi: "转为形式发票",
@@ -147,6 +154,7 @@ const TRANSLATIONS = {
     customers: "Pelanggan",
     workflow: "Aliran Kerja",
     settings: "Tetapan",
+    recycle_bin: "Tong Kitar Semula",
     logout: "Log Keluar",
     system_overview: "Gambaran Sistem",
     new_transaction: "Transaksi Baru",
@@ -166,6 +174,9 @@ const TRANSLATIONS = {
     save: "Simpan",
     discard: "Batal",
     delete: "Padam",
+    restore: "Pulihkan",
+    perm_delete: "Padam Kekal",
+    no_deleted_docs: "Tong kitar semula kosong",
     convert_inv: "Tukar ke Invois",
     convert_do: "Tukar ke DO",
     convert_pi: "Tukar ke Pro-Forma",
@@ -234,7 +245,7 @@ const DEFAULT_PRODUCTS: Product[] = [
 
 const getNextDocNumber = (docs: Document[], type: DocType, prefix: string) => {
   const currentYear = new Date().getFullYear();
-  const yearDocs = docs.filter(d => d.type === type && d.number.includes(`-${currentYear}-`));
+  const yearDocs = docs.filter(d => !d.isDeleted && d.type === type && d.number.includes(`-${currentYear}-`));
   let maxSeq = 0;
   yearDocs.forEach(d => {
     const parts = d.number.split('-');
@@ -245,7 +256,6 @@ const getNextDocNumber = (docs: Document[], type: DocType, prefix: string) => {
   return `${prefix}-${currentYear}-${nextSeq}`;
 };
 
-// --- ✅ 统一财务计算函数 (已引入精确四舍五入) ---
 const calculateGrandTotal = (doc: Document) => {
   const subtotal = doc.items.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice), 0);
   const tax = doc.items.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
@@ -292,6 +302,7 @@ const Sidebar = ({ isOpen, onClose, onLogout, lang, setLang }: { isOpen: boolean
     { label: t('products'), path: '/products', icon: <Package /> },
     { label: t('customers'), path: '/customers', icon: <Users /> },
     { label: t('workflow'), path: '/workflow', icon: <ArrowRightLeft /> },
+    { label: t('recycle_bin'), path: '/recycle-bin', icon: <Trash2 /> },
     { label: t('settings'), path: '/settings', icon: <SettingsIcon /> },
   ];
   return (
@@ -336,22 +347,23 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
   const [isMounted, setIsMounted] = useState(false);
   const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
   useEffect(() => { const timer = setTimeout(() => setIsMounted(true), 250); return () => clearTimeout(timer); }, []);
-  const sortedDocs = useMemo(() => [...state.documents].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [state.documents]);
+  
+  const sortedDocs = useMemo(() => state.documents.filter(d => !d.isDeleted).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [state.documents]);
   
   const totalInvoiced = useMemo(() => 
     state.documents
-      .filter(d => d.type === DocType.INVOICE && d.status !== 'Cancelled')
+      .filter(d => !d.isDeleted && d.type === DocType.INVOICE && d.status !== 'Cancelled')
       .reduce((sum, d) => sum + calculateGrandTotal(d), 0)
   , [state.documents]);
 
-  const activeQuotes = state.documents.filter(d => d.type === DocType.QUOTATION && d.status !== 'Converted' && d.status !== 'Cancelled').length;
-  const totalDOs = state.documents.filter(d => d.type === DocType.DELIVERY_ORDER && d.status !== 'Cancelled').length;
+  const activeQuotes = state.documents.filter(d => !d.isDeleted && d.type === DocType.QUOTATION && d.status !== 'Converted' && d.status !== 'Cancelled').length;
+  const totalDOs = state.documents.filter(d => !d.isDeleted && d.type === DocType.DELIVERY_ORDER && d.status !== 'Cancelled').length;
   
   const chartData = useMemo(() => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const currentYear = new Date().getFullYear();
     const monthlyTotals = new Array(12).fill(0);
-    state.documents.filter(d => d.type === DocType.INVOICE && d.status !== 'Cancelled').forEach(doc => {
+    state.documents.filter(d => !d.isDeleted && d.type === DocType.INVOICE && d.status !== 'Cancelled').forEach(doc => {
       const d = new Date(doc.date);
       if (d.getFullYear() === currentYear) {
         monthlyTotals[d.getMonth()] += calculateGrandTotal(doc);
@@ -360,9 +372,8 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
     return months.map((name, i) => ({ name, val: monthlyTotals[i] }));
   }, [state.documents]);
 
-  // --- ✅ 自动备份提醒逻辑 ---
   const daysSinceBackup = useMemo(() => {
-    if (!state.lastBackupDate) return 999; // 从未备份
+    if (!state.lastBackupDate) return 999; 
     const last = new Date(state.lastBackupDate).getTime();
     const now = new Date().getTime();
     return Math.floor((now - last) / (1000 * 60 * 60 * 24));
@@ -378,7 +389,7 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
 
     const monthDocs = state.documents.filter(doc => {
       const d = new Date(doc.date);
-      return d.getFullYear() === currentYear && d.getMonth() === currentMonth && doc.status !== 'Cancelled';
+      return !doc.isDeleted && d.getFullYear() === currentYear && d.getMonth() === currentMonth && doc.status !== 'Cancelled';
     });
 
     const formattedData = monthDocs.map(doc => {
@@ -405,7 +416,6 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-700">
-      {/* ✅ 备份提醒横幅 */}
       {showBackupWarning && (
         <div className="bg-amber-50 border-2 border-amber-200 p-4 rounded-2xl flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
@@ -443,7 +453,6 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
         <div className="xl:col-span-8 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-[500px]">
            <div className="p-7 border-b border-slate-100 flex items-center justify-between">
             <div><h3 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2.5"><TrendingUp className="w-6 h-6 text-emerald-500" />{t('revenue')}</h3><p className="text-slate-400 text-xs font-semibold uppercase tracking-widest mt-1">Monthly Billing Aggregation (MYR)</p></div>
-            {/* --- ✅ 汇总报告按钮 --- */}
             <button 
               onClick={handleDownloadMonthlyReport}
               className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 rounded-lg transition-all text-xs font-bold border border-slate-100 active:scale-95"
@@ -490,6 +499,7 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
   const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
   
   const filteredDocs = useMemo(() => state.documents.filter(doc => {
+    if (doc.isDeleted) return false;
     const matchesFilter = filter === 'ALL' || doc.type === filter;
     const customer = state.customers.find(c => c.id === doc.customerId);
     const matchesSearch = doc.number.toLowerCase().includes(search.toLowerCase()) || customer?.name.toLowerCase().includes(search.toLowerCase());
@@ -541,17 +551,18 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
                     <td className="px-6 py-4 text-sm font-medium text-slate-600 truncate max-w-[150px]">{customer?.name || 'Unknown'}</td>
                     <td className="px-6 py-4 text-sm font-extrabold text-slate-900 whitespace-nowrap">{formatCurrency(total)}</td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
-                      <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handlePdfDownload(doc)} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('download_pdf')}><Download className="w-4 h-4" /></button>
-                        <button onClick={() => navigate(`/documents/${doc.id}/edit`)} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title={t('edit')}><Pencil className="w-4 h-4" /></button>
+                      {/* ✅ 优化：操作按钮调大尺寸，并增加点击区域 (p-3) */}
+                      <div className="flex justify-end gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handlePdfDownload(doc)} className="p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('download_pdf')}><Download className="w-5.5 h-5.5" /></button>
+                        <button onClick={() => navigate(`/documents/${doc.id}/edit`)} className="p-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title={t('edit')}><Pencil className="w-5.5 h-5.5" /></button>
                         
-                        {doc.type === DocType.QUOTATION && ( <button onClick={() => onConvert(doc, DocType.PROFORMA)} className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title={t('convert_pi')}><FileText className="w-4 h-4" /></button>)}
+                        {doc.type === DocType.QUOTATION && ( <button onClick={() => onConvert(doc, DocType.PROFORMA)} className="p-3 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title={t('convert_pi')}><FileText className="w-5.5 h-5.5" /></button>)}
                         
-                        {(doc.type === DocType.QUOTATION || doc.type === DocType.PROFORMA) && (<button onClick={() => onConvert(doc, DocType.DELIVERY_ORDER)} className="p-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all" title={t('convert_do')}><Truck className="w-4 h-4" /></button>)}
+                        {(doc.type === DocType.QUOTATION || doc.type === DocType.PROFORMA) && (<button onClick={() => onConvert(doc, DocType.DELIVERY_ORDER)} className="p-3 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all" title={t('convert_do')}><Truck className="w-5.5 h-5.5" /></button>)}
 
-                        {(doc.type === DocType.PROFORMA || doc.type === DocType.DELIVERY_ORDER) && (<button onClick={() => onConvert(doc, DocType.INVOICE)} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('convert_inv')}><Receipt className="w-4 h-4" /></button>)}
+                        {(doc.type === DocType.PROFORMA || doc.type === DocType.DELIVERY_ORDER) && (<button onClick={() => onConvert(doc, DocType.INVOICE)} className="p-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('convert_inv')}><Receipt className="w-5.5 h-5.5" /></button>)}
                         
-                        <button onClick={() => onDelete(doc.id)} className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title={t('delete')}><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => onDelete(doc.id)} className="p-3 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title={t('delete')}><Trash2 className="w-5.5 h-5.5" /></button>
                       </div>
                     </td>
                   </tr>
@@ -560,6 +571,65 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
             </tbody>
           </table>
           {filteredDocs.length === 0 && <div className="p-16 text-center"><div className="mx-auto w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 border border-slate-100"><Search className="w-8 h-8 text-slate-300" /></div><p className="text-slate-500 font-bold text-lg">No Documents Found</p></div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RecycleBin = ({ state, onRestore, onPermanentDelete, lang }: { state: AppState, onRestore: (id: string) => void, onPermanentDelete: (id: string) => void, lang: Lang }) => {
+  const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
+  const deletedDocs = useMemo(() => state.documents.filter(d => d.isDeleted), [state.documents]);
+
+  return (
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{t('recycle_bin')}</h1>
+        <p className="text-slate-500">View and recover recently deleted records.</p>
+      </header>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[600px]">
+            <thead>
+              <tr className="bg-slate-50/50 border-b border-slate-100">
+                <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_number')}</th>
+                <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_type')}</th>
+                <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('customer')}</th>
+                <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest text-right">{t('actions')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {deletedDocs.map(doc => {
+                const customer = state.customers.find(c => c.id === doc.customerId);
+                return (
+                  <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors group">
+                    <td className="px-6 py-4 font-bold text-slate-400 line-through">{doc.number}</td>
+                    <td className="px-6 py-4 whitespace-nowrap opacity-50"><span className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold uppercase ${DOC_META[doc.type].color}`}>{doc.type}</span></td>
+                    <td className="px-6 py-4 text-sm font-medium text-slate-400 truncate max-w-[150px]">{customer?.name || 'Unknown'}</td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      {/* ✅ 优化：回收站内的恢复和删除按钮也相应调大 */}
+                      <div className="flex justify-end gap-3">
+                        <button onClick={() => onRestore(doc.id)} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-50 text-emerald-600 rounded-lg text-sm font-bold hover:bg-emerald-100 transition-all">
+                          <RotateCcw className="w-5 h-5" /> {t('restore')}
+                        </button>
+                        <button onClick={() => onPermanentDelete(doc.id)} className="flex items-center gap-2 px-4 py-2.5 bg-rose-50 text-rose-600 rounded-lg text-sm font-bold hover:bg-rose-100 transition-all">
+                          <Trash className="w-5 h-5" /> {t('perm_delete')}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {deletedDocs.length === 0 && (
+            <div className="p-16 text-center">
+              <div className="mx-auto w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 border border-slate-100">
+                <Trash2 className="w-8 h-8 text-slate-300" />
+              </div>
+              <p className="text-slate-400 font-bold text-lg">{t('no_deleted_docs')}</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -589,13 +659,11 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
 
   useEffect(() => { if (id) { const existingDoc = state.documents.find(d => d.id === id); if (existingDoc) setDoc(existingDoc); } }, [id, state.documents]);
   
-  // --- ✅ 修正：DocumentForm 中的金额计算已同步 roundTo ---
   const subtotal = useMemo(() => doc.items?.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice), 0) || 0, [doc.items]);
   const tax = useMemo(() => doc.items?.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice * (i.taxRate || 0)), 0) || 0, [doc.items]);
   const total = roundTo(subtotal + tax - (doc.discount || 0));
   
   const addItem = () => { setDoc(prev => ({ ...prev, items: [...(prev.items || []), { id: Math.random().toString(), description: '', quantity: 0, unitPrice: 0, taxRate: 0 }] })); };
-  
   const removeItem = (id: string) => { setDoc(prev => ({ ...prev, items: prev.items?.filter(i => i.id !== id) })); };
   const updateItem = (id: string, field: keyof LineItem, value: any) => { setDoc(prev => ({ ...prev, items: prev.items?.map(i => i.id === id ? { ...i, [field]: value } : i) })); };
   const handleProductSelect = (itemId: string, productId: string) => {
@@ -605,14 +673,11 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!doc.customerId) { alert("Please select a customer / 请选择客户"); return; }
     if (!doc.items || doc.items.length === 0) { alert("Please add at least one item / 请至少添加一项"); return; }
-
     for (let i = 0; i < doc.items.length; i++) {
         const item = doc.items[i];
         const lineNum = i + 1;
-
         if (!item.description || item.description.trim() === "") {
             alert(`Row ${lineNum} Error: Description is missing.\n第 ${lineNum} 行错误：必须填写项目描述。`);
             return;
@@ -626,7 +691,6 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
             return;
         }
     }
-
     if (doc.customerId && doc.items && doc.items.length > 0) {
       onSave({ ...doc, id: doc.id || Math.random().toString(36).substr(2, 9) } as Document);
       navigate('/documents');
@@ -703,7 +767,7 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
               <div className="flex justify-between text-sm"><span className="text-slate-400 font-medium">{t('tax_total')}</span><span className="font-bold text-blue-400">{formatCurrency(tax)}</span></div>
               <div className="flex justify-between items-center text-sm"><span className="text-slate-400 font-medium">{t('discount')}</span><input type="number" className="w-20 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-right text-emerald-400 font-bold focus:ring-2 focus:ring-emerald-500/50 outline-none" value={doc.discount} onChange={(e) => setDoc({ ...doc, discount: Math.max(0, Number(e.target.value)) })} /></div>
             </div>
-            <div className="pt-6 mt-6 border-t border-white/10 flex justify-between items-end"><div><span className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1">{t('total_payable')}</span><span className="text-3xl font-extrabold text-white tracking-tighter leading-none">{formatCurrency(total)}</span></div></div>
+            <div className="pt-6 mt-6 border-t border-white/10 flex justify-between items-end"><div><span className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1">{t('total_payable')}</span><span className="text-3xl font-extrabold text-white tracking-tighter ladies-none">{formatCurrency(total)}</span></div></div>
             <button type="submit" className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-extrabold rounded-2xl transition-all shadow-xl shadow-emerald-500/20 active:scale-95">{id ? t('save') : t('create')}</button>
           </div>
         </div>
@@ -718,25 +782,20 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const sigInputRef = useRef<HTMLInputElement>(null); 
-
   const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) { if (file.size > 200 * 1024) { alert("Logo file is too large."); return; } const reader = new FileReader(); reader.onloadend = () => { setSettings({ ...settings, logo: reader.result as string }); }; reader.readAsDataURL(file); }
   };
-
   const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 200 * 1024) { alert("Signature file is too large."); return; }
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setSettings({ ...settings, signature: reader.result as string });
-      };
+      reader.onloadend = () => { setSettings({ ...settings, signature: reader.result as string }); };
       reader.readAsDataURL(file);
     }
   };
-
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) onImport(file); };
   const handleSafeReset = () => { if (confirm(t('factory_reset_confirm_msg'))) { const input = prompt(t('enter_password_verify')); if (input === adminPassword) { onReset(); alert(t('data_wiped')); } } };
   return (
@@ -750,13 +809,10 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-8 space-y-8">
           <div className="flex flex-col sm:flex-row items-center gap-8 pb-8 border-b border-slate-100">
-            {/* Logo Section */}
             <div className="flex flex-col items-center sm:items-start gap-2">
                  <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Company Logo</label>
                  <div onClick={() => fileInputRef.current?.click()} className="w-24 h-24 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-300 relative overflow-hidden group cursor-pointer shrink-0">{settings.logo ? <img src={settings.logo} alt="Logo" className="w-full h-full object-contain p-2" /> : <ImageIcon className="w-8 h-8 opacity-20" />}<div className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold"><Plus className="w-4 h-4 mb-1" /><span>{settings.logo ? 'CHANGE' : 'UPLOAD'}</span></div><input type="file" ref={fileInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" /></div>
             </div>
-
-            {/* Signature Upload UI */}
             <div className="flex flex-col items-center sm:items-start gap-2">
               <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Digital Signature</label>
               <div onClick={() => sigInputRef.current?.click()} className="w-48 h-24 bg-slate-50 rounded-2xl flex items-center justify-center border-2 border-dashed border-slate-200 text-slate-300 relative overflow-hidden group cursor-pointer shrink-0">
@@ -765,7 +821,6 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
                 <input type="file" ref={sigInputRef} onChange={handleSignatureUpload} className="hidden" accept="image/*" />
               </div>
             </div>
-
             <div className="flex-1 text-center sm:text-left"><h3 className="text-xl font-extrabold text-slate-900">{settings.name || "Business Name"}</h3><p className="text-sm text-slate-500 font-medium">Your identity on all generated PDF documents.</p></div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -878,7 +933,33 @@ const App = () => {
   const [state, setState] = useLocalStorage<AppState>('techfab_billing_db_v1', { documents: [], customers: DEFAULT_CUSTOMERS, products: DEFAULT_PRODUCTS, settings: DEFAULT_SETTINGS, lastBackupDate: '' });
   const handleSaveDoc = (doc: Document) => { setState(prev => { const exists = prev.documents.some(d => d.id === doc.id); return exists ? { ...prev, documents: prev.documents.map(d => d.id === doc.id ? doc : d) } : { ...prev, documents: [doc, ...prev.documents] }; }); };
   const handleUpdateDocStatus = (id: string, status: Document['status']) => { setState(prev => ({ ...prev, documents: prev.documents.map(d => d.id === id ? { ...d, status } : d) })); };
-  const handleDeleteDoc = (id: string) => { if (window.confirm('Erase this record?')) { setState(prev => ({ ...prev, documents: prev.documents.filter(d => d.id !== id) })); } };
+  
+  const handleDeleteDoc = (id: string) => { 
+    if (window.confirm('Move this document to trash? / 确定要将单据放入回收站吗？')) { 
+      setState(prev => ({ 
+        ...prev, 
+        documents: prev.documents.map(d => d.id === id ? { ...d, isDeleted: true } : d) 
+      })); 
+    } 
+  };
+
+  const handleRestoreDoc = (id: string) => {
+    setState(prev => ({
+      ...prev,
+      documents: prev.documents.map(d => d.id === id ? { ...d, isDeleted: false } : d)
+    }));
+    alert("Record restored! / 记录已恢复！");
+  };
+
+  const handlePermanentDelete = (id: string) => {
+    if (window.confirm('PERMANENT DELETE: This action cannot be undone. Continue? / 永久删除：此操作不可撤销，确定继续吗？')) {
+      setState(prev => ({
+        ...prev,
+        documents: prev.documents.filter(d => d.id !== id)
+      }));
+    }
+  };
+
   const handleConvertDoc = (doc: Document, toType: DocType) => { const nextNum = getNextDocNumber(state.documents, toType, DOC_META[toType].prefix); const newDoc: Document = { ...doc, id: Math.random().toString(36).substr(2, 9), type: toType, number: nextNum, date: new Date().toISOString().split('T')[0], status: 'Draft', notes: `Ref: ${doc.number}${doc.notes ? '\n' + doc.notes : ''}` }; setState(prev => ({ ...prev, documents: [newDoc, ...prev.documents.map(d => d.id === doc.id ? { ...d, status: 'Converted' } : d)] })); alert(`Converted to ${DOC_META[toType].label}.`); };
   const handleResetData = () => { Preferences.clear(); setState({ documents: [], customers: DEFAULT_CUSTOMERS, products: DEFAULT_PRODUCTS, settings: DEFAULT_SETTINGS, lastBackupDate: '' }); window.location.reload(); };
   
@@ -897,10 +978,7 @@ const App = () => {
         linkElement.setAttribute('download', fileName);
         linkElement.click();
       }
-      
-      // ✅ 导出成功后更新备份日期
       setState(prev => ({ ...prev, lastBackupDate: new Date().toISOString() }));
-      
     } catch (err) { alert("Export failed."); }
   };
 
@@ -917,12 +995,12 @@ const App = () => {
         <Routes>
           <Route path="/" element={<Dashboard state={state} lang={lang} />} />
           <Route path="/documents" element={<DocumentsList state={state} onDelete={handleDeleteDoc} onConvert={handleConvertDoc} lang={lang} />} />
+          <Route path="/recycle-bin" element={<RecycleBin state={state} onRestore={handleRestoreDoc} onPermanentDelete={handlePermanentDelete} lang={lang} />} />
           <Route path="/documents/new" element={<DocumentForm state={state} onSave={handleSaveDoc} lang={lang} />} />
           <Route path="/documents/:id/edit" element={<DocumentForm state={state} onSave={handleSaveDoc} lang={lang} />} />
           <Route path="/products" element={<Products state={state} onAdd={p => setState({...state, products: [...(state.products || []), p]})} onUpdate={updatedP => setState({...state, products: state.products.map(p => p.id === updatedP.id ? updatedP : p)})} onDelete={id => setState({...state, products: state.products.filter(p => id !== p.id)})} lang={lang} />} />
           <Route path="/customers" element={<Customers state={state} onAdd={c => setState({...state, customers: [...state.customers, c]})} onUpdate={updatedC => setState({...state, customers: state.customers.map(c => c.id === updatedC.id ? updatedC : c)})} onDelete={id => setState({...state, customers: state.customers.filter(c => id !== c.id)})} lang={lang} />} />
           <Route path="/settings" element={<Settings state={state} onSave={s => { setState({...state, settings: s}); alert('Profile updated.'); }} onReset={handleResetData} onExport={handleExportData} onImport={handleImportData} onChangePassword={setAdminPassword} lang={lang} adminPassword={adminPassword} />} />
-          
           <Route path="/workflow" element={
             <div className="space-y-8 pb-20">
               <header>
@@ -930,9 +1008,24 @@ const App = () => {
                 <p className="text-slate-500 font-medium">Operational funnel tracking from sales to fulfillment.</p>
               </header>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                <WorkflowStage title={TRANSLATIONS[lang].stage_sales} icon={<FileText className="text-blue-500 w-5 h-5" />} docs={state.documents.filter(d => (d.type === DocType.QUOTATION || d.type === DocType.PROFORMA) && d.status !== 'Converted' && d.status !== 'Cancelled')} state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} targetType={DocType.DELIVERY_ORDER} actionLabel="Generate DO" />
-                <WorkflowStage title={TRANSLATIONS[lang].stage_fulfill} icon={<Truck className="text-purple-500 w-5 h-5" />} docs={state.documents.filter(d => d.type === DocType.DELIVERY_ORDER && d.status !== 'Converted' && d.status !== 'Cancelled')} state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} targetType={DocType.INVOICE} actionLabel="Generate Invoice" />
-                <WorkflowStage title={TRANSLATIONS[lang].stage_billing} icon={<Receipt className="text-emerald-500 w-5 h-5" />} docs={state.documents.filter(d => d.type === DocType.INVOICE && d.status !== 'Cancelled')} state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} />
+                <WorkflowStage 
+                   title={TRANSLATIONS[lang].stage_sales} 
+                   icon={<FileText className="text-blue-500 w-5 h-5" />} 
+                   docs={state.documents.filter(d => !d.isDeleted && (d.type === DocType.QUOTATION || d.type === DocType.PROFORMA) && d.status !== 'Converted' && d.status !== 'Cancelled')} 
+                   state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} targetType={DocType.DELIVERY_ORDER} actionLabel="Generate DO" 
+                />
+                <WorkflowStage 
+                   title={TRANSLATIONS[lang].stage_fulfill} 
+                   icon={<Truck className="text-purple-500 w-5 h-5" />} 
+                   docs={state.documents.filter(d => !d.isDeleted && d.type === DocType.DELIVERY_ORDER && d.status !== 'Converted' && d.status !== 'Cancelled')} 
+                   state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} targetType={DocType.INVOICE} actionLabel="Generate Invoice" 
+                />
+                <WorkflowStage 
+                   title={TRANSLATIONS[lang].stage_billing} 
+                   icon={<Receipt className="text-emerald-500 w-5 h-5" />} 
+                   docs={state.documents.filter(d => !d.isDeleted && d.type === DocType.INVOICE && d.status !== 'Cancelled')} 
+                   state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} 
+                />
               </div>
             </div>
           } />

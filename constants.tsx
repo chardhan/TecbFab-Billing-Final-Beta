@@ -89,7 +89,8 @@ export const amountToWords = (amount: number): string => {
 
   let words = 'RINGGIT MALAYSIA: ' + result;
   if (decimalPart > 0) {
-    words += ' AND CENTS ' + helper(decimalPart);
+    // ✅ 修正语序：数字在前，单位 SEN 在后
+    words += ' AND ' + helper(decimalPart) + ' SEN';
   }
   return words + ' ONLY';
 };

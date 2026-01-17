@@ -400,6 +400,9 @@ const StatCard = ({ title, value, icon, trend }: { title: string, value: string,
   </div>
 );
 
+// =========================================================
+// ✅ DocumentsList: 修改了 QT 转换逻辑
+// =========================================================
 const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, onDelete: (id: string) => void, onConvert: (doc: Document, toType: DocType) => void, lang: Lang }) => {
   const [filter, setFilter] = useState<DocType | 'ALL'>('ALL');
   const [search, setSearch] = useState('');
@@ -461,9 +464,16 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
                       <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                         <button onClick={() => handlePdfDownload(doc)} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('download_pdf')}><Download className="w-4 h-4" /></button>
                         <button onClick={() => navigate(`/documents/${doc.id}/edit`)} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title={t('edit')}><Pencil className="w-4 h-4" /></button>
+                        
+                        {/* 🟢 Convert: QUOTATION -> PROFORMA */}
                         {doc.type === DocType.QUOTATION && ( <button onClick={() => onConvert(doc, DocType.PROFORMA)} className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all" title={t('convert_pi')}><FileText className="w-4 h-4" /></button>)}
-                        {(doc.type === DocType.QUOTATION || doc.type === DocType.PROFORMA || doc.type === DocType.DELIVERY_ORDER) && (<button onClick={() => onConvert(doc, DocType.INVOICE)} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('convert_inv')}><Receipt className="w-4 h-4" /></button>)}
-                        {doc.type === DocType.PROFORMA && (<button onClick={() => onConvert(doc, DocType.DELIVERY_ORDER)} className="p-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all" title={t('convert_do')}><Truck className="w-4 h-4" /></button>)}
+                        
+                        {/* 🟣 Convert: QUOTATION -> DO (新) 或 PROFORMA -> DO */}
+                        {(doc.type === DocType.QUOTATION || doc.type === DocType.PROFORMA) && (<button onClick={() => onConvert(doc, DocType.DELIVERY_ORDER)} className="p-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all" title={t('convert_do')}><Truck className="w-4 h-4" /></button>)}
+
+                        {/* 🟢 Convert: PROFORMA -> INV 或 DELIVERY_ORDER -> INV (移除了 QUOTATION) */}
+                        {(doc.type === DocType.PROFORMA || doc.type === DocType.DELIVERY_ORDER) && (<button onClick={() => onConvert(doc, DocType.INVOICE)} className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title={t('convert_inv')}><Receipt className="w-4 h-4" /></button>)}
+                        
                         <button onClick={() => onDelete(doc.id)} className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all" title={t('delete')}><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </td>
@@ -479,9 +489,6 @@ const DocumentsList = ({ state, onDelete, onConvert, lang }: { state: AppState, 
   );
 };
 
-// =========================================================
-// ✅ DocumentForm: 已包含 Qty>=0, Price>=0.01, Tax=0 验证
-// =========================================================
 const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: Document) => void, lang: Lang }) => {
   const navigate = useNavigate();
   const { id } = useParams();

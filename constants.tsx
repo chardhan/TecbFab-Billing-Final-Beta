@@ -14,7 +14,7 @@ export const DOC_META = {
     prefix: 'QT'
   },
   [DocType.INVOICE]: {
-    label: 'Invoice',
+    label: 'Tax Invoice',
     color: 'bg-emerald-100 text-emerald-700',
     icon: <Receipt className="w-5 h-5" />,
     prefix: 'INV'

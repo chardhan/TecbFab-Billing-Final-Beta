@@ -92,7 +92,14 @@ const TRANSLATIONS = {
     load_more: "Load More Records",
     showing_records: "Showing {count} of {total} records",
     mark_paid: "Mark as Paid",
-    mark_unpaid: "Mark as Unpaid"
+    mark_unpaid: "Mark as Unpaid",
+    // ✅ 新增翻译
+    backup_title: "Security Reminder / Backup Required",
+    backup_msg_long: "You haven't backed up your data for a long time.",
+    backup_msg_days: "You haven't backed up in {days} days.",
+    backup_go_to_settings: "Please go to settings to backup.",
+    backup_now: "Backup Now",
+    month_report: "Month Report"
   },
   zh: {
     dashboard: "仪表盘",
@@ -165,7 +172,14 @@ const TRANSLATIONS = {
     load_more: "加载更多记录",
     showing_records: "正在显示 {count} / {total} 条记录",
     mark_paid: "标记为已付",
-    mark_unpaid: "标记为未付"
+    mark_unpaid: "标记为未付",
+    // ✅ 新增翻译
+    backup_title: "数据安全提醒",
+    backup_msg_long: "你已经很久没有备份数据了。",
+    backup_msg_days: "你已经有 {days} 天没有备份数据了。",
+    backup_go_to_settings: "请前往设置进行备份。",
+    backup_now: "立即备份",
+    month_report: "本月报表"
   },
   ms: {
     dashboard: "Papan Pemuka",
@@ -238,7 +252,14 @@ const TRANSLATIONS = {
     load_more: "Muat Lebih Banyak Rekod",
     showing_records: "Memaparkan {count} daripada {total} rekod",
     mark_paid: "Tanda Sudah Bayar",
-    mark_unpaid: "Tanda Belum Bayar"
+    mark_unpaid: "Tanda Belum Bayar",
+    // ✅ 新增翻译
+    backup_title: "Peringatan Keselamatan Data",
+    backup_msg_long: "Anda sudah lama tidak membuat sandaran data.",
+    backup_msg_days: "Anda sudah {days} hari tidak membuat sandaran.",
+    backup_go_to_settings: "Sila pergi ke tetapan untuk sandaran.",
+    backup_now: "Sandar Sekarang",
+    month_report: "Laporan Bulan"
   }
 };
 
@@ -362,7 +383,7 @@ const Sidebar = ({ isOpen, onClose, onLogout, lang, setLang }: { isOpen: boolean
     <>
       {isOpen && <div className="fixed inset-0 bg-slate-900/60 z-40 lg:hidden backdrop-blur-sm" onClick={onClose} />}
       <aside className={`fixed lg:sticky top-0 left-0 z-50 w-64 bg-slate-900 text-slate-300 flex flex-col h-screen transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'} border-r border-slate-800 no-print`}>
-        <div className="pt-[env(safe-area-inset-top)] p-6 flex items-center justify-between">
+        <div className="pt-[calc(env(safe-area-inset-top)+12px)] p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-emerald-500/20">TF</div>
             <h1 className="text-xl font-bold text-white tracking-tight">Techfab</h1>
@@ -433,7 +454,6 @@ const TaxReport = ({ state, lang }: { state: AppState, lang: Lang }) => {
       return;
     }
     try {
-       // ✅ [Data Mapping Fix] Ensure we pass a simple object structure that matches what generateSummaryPDF expects
       const reportData = monthlyInvoices.map(doc => {
         const sub = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
         const tax = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
@@ -566,11 +586,9 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
   }, [state.lastBackupDate]);
   const showBackupWarning = daysSinceBackup >= 7;
 
-  // ✅ [新增] Dashboard 快速下载本月报表逻辑
   const handleQuickReport = async () => {
-    const currentMonth = new Date().toISOString().slice(0, 7); // 获取 "2026-01"
+    const currentMonth = new Date().toISOString().slice(0, 7); 
     
-    // 1. 筛选本月有效的发票
     const docs = state.documents.filter(d => 
       !d.isDeleted && 
       d.type === DocType.INVOICE && 
@@ -583,7 +601,6 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
       return; 
     }
 
-    // 2. 转换数据格式 (为了配合 pdfService 的要求)
     const reportData = docs.map(d => {
         const sub = d.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
         const tax = d.items.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
@@ -592,13 +609,12 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
             number: d.number,
             customerName: state.customers.find(c => c.id === d.customerId)?.name || 'Unknown',
             subtotal: sub,
-	    discount: d.discount || 0,
+            discount: d.discount || 0,
             tax: tax,
             total: sub + tax - (d.discount || 0)
         };
     });
 
-    // 3. 调用 PDF 服务
     try {
       // @ts-ignore
       await generateSummaryPDF(reportData, state.settings, new Date().toLocaleString('en-MY', { month: 'long', year: 'numeric' }));
@@ -614,13 +630,13 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
           <div className="flex items-center gap-3">
             <div className="p-2 bg-amber-100 rounded-xl text-amber-600"><AlertCircle className="w-6 h-6" /></div>
             <div>
-              <p className="font-black text-amber-900 text-sm">数据安全提醒 / Backup Required</p>
+              <p className="font-black text-amber-900 text-sm">{t('backup_title')}</p>
               <p className="text-amber-700 text-xs font-bold mt-0.5">
-                {daysSinceBackup > 30 ? '你已经很久没有备份数据了。' : `你已经有 ${daysSinceBackup} 天没有备份数据了。`} 请前往设置进行备份。
+                {daysSinceBackup > 30 ? t('backup_msg_long') : t('backup_msg_days').replace('{days}', daysSinceBackup.toString())} {t('backup_go_to_settings')}
               </p>
             </div>
           </div>
-          <Link to="/settings" className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 shadow-lg shadow-amber-600/20">立即备份</Link>
+          <Link to="/settings" className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 shadow-lg shadow-amber-600/20">{t('backup_now')}</Link>
         </div>
       )}
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-end border-b border-slate-200 pb-6">
@@ -632,16 +648,14 @@ const Dashboard = ({ state, lang }: { state: AppState, lang: Lang }) => {
           <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-none">{t('system_overview')}</h1>
         </div>
         <div className="mt-4 sm:mt-0 flex gap-2">
-          {/* 👇👇👇 新增：下载报表按钮 👇👇👇 */}
           <button 
             onClick={handleQuickReport} 
             className="bg-white text-slate-600 border border-slate-200 px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-slate-50 transition-all shadow-sm active:scale-95"
             title="Download Current Month Report"
           >
             <FileText className="w-4 h-4" /> 
-            <span className="hidden sm:inline">{lang === 'zh' ? "本月报表" : "Month Report"}</span>
+            <span className="hidden sm:inline">{t('month_report')}</span>
           </button>
-          {/* 👆👆👆 新增结束 👆👆👆 */}
 
           <Link to="/documents/new" className="bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 shadow-lg shadow-slate-900/10 hover:bg-slate-800 transition-all active:scale-95"><Plus className="w-4 h-4" /> {t('new_transaction')}</Link>
         </div>
@@ -861,7 +875,6 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
     if (!doc.customerId) { alert(lang === 'zh' ? "❌ 请选择客户" : "Please select customer"); return; }
     if (!doc.items || doc.items.length === 0) { alert(lang === 'zh' ? "❌ 请添加项目" : "Please add items"); return; }
     
-    // ✅ [Updated Validation] 严格检查：描述为空、数量<1、单价<0.01 都禁止保存
     for (let i = 0; i < (doc.items || []).length; i++) {
         const item = doc.items![i];
         const rowNum = i + 1;

@@ -207,15 +207,12 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
 
   docPdf.setFont('helvetica', 'bold').setFontSize(9).text('ISSUED BY:', 125, sigY);
   
-  // ============================================
-  // 👇 仅仅在下方新增了这段签名代码，不影响任何布局 👇
   if (settings.signature) {
     try {
       // 这里的坐标 (125, sigY+2) 是根据您的布局计算的，刚好放在线上面
       docPdf.addImage(settings.signature, 'PNG', 125, sigY + 2, 50, 20, undefined, 'FAST');
     } catch (e) { console.error('Sig error', e); }
   }
-  // ============================================
 
   docPdf.line(125, sigY + 25, 190, sigY + 25);
   docPdf.setFont('helvetica', 'normal').setFontSize(7).text(settings.name, 125, sigY + 30);
@@ -234,8 +231,8 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
 };
 
 /**
- * --- ✅ 新增：生成月度汇总报告 PDF ---
- * @param monthData 包含单据列表的数组
+ * --- ✅ 新增：生成月度汇总报告 PDF (已更新：包含折扣列) ---
+ * @param monthData 包含单据列表的数组 (需包含 discount 字段)
  * @param settings 公司设置
  * @param period 周期描述（例如 "January 2026"）
  */
@@ -263,9 +260,10 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
   // 2. Summary Logic
   const totals = monthData.reduce((acc, d) => ({
     subtotal: acc.subtotal + d.subtotal,
+    discount: acc.discount + (d.discount || 0), // ✅ 新增：汇总折扣
     tax: acc.tax + d.tax,
     grandTotal: acc.grandTotal + d.total
-  }), { subtotal: 0, tax: 0, grandTotal: 0 });
+  }), { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 });
 
   // 3. Quick Stats Cards (简单的汇总信息显示)
   docPdf.setFillColor(248, 250, 252);
@@ -283,15 +281,17 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
   docPdf.setTextColor(30, 41, 59);
   docPdf.text(`${monthData.length} Docs`, 150, startY + 29);
 
-  // 4. Detailed Table
+  // 4. Detailed Table (✅ 已更新：包含 Discount 列)
   autoTable(docPdf, {
     startY: startY + 45,
-    head: [['Date', 'Number', 'Customer', 'Subtotal', 'Tax', 'Total']],
+    // 👇👇👇 增加 "Discount" 列 👇👇👇
+    head: [['Date', 'Number', 'Customer', 'Subtotal', 'Discount', 'Tax', 'Total']],
     body: monthData.map(d => [
       formatDisplayDate(d.date),
       d.number,
       d.customerName,
       formatCurrency(d.subtotal),
+      d.discount > 0 ? `-${formatCurrency(d.discount)}` : '-', // ✅ 新增：显示折扣金额
       formatCurrency(d.tax),
       formatCurrency(d.total)
     ]),
@@ -300,8 +300,9 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
     styles: { fontSize: 8 },
     columnStyles: {
       3: { halign: 'right' },
-      4: { halign: 'right' },
-      5: { halign: 'right' }
+      4: { halign: 'right', textColor: [220, 38, 38] }, // Discount 红色
+      5: { halign: 'right' },
+      6: { halign: 'right' }
     }
   });
 

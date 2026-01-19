@@ -1,5 +1,7 @@
 import { ReactNode } from 'react';
 
+export type Lang = 'en' | 'zh' | 'ms';
+
 export enum DocType {
   QUOTATION = 'QT',
   INVOICE = 'INV',
@@ -12,7 +14,7 @@ export interface LineItem {
   description: string;
   quantity: number;
   unitPrice: number;
-  taxRate: number; 
+  taxRate: number;
 }
 
 export interface Product {
@@ -32,6 +34,7 @@ export interface Customer {
   attentionTo?: string;
   tin?: string;
   brn?: string;
+  msic?: string;
 }
 
 export interface CompanySettings {
@@ -45,6 +48,7 @@ export interface CompanySettings {
   bankAccount: string;
   sstRate: number;
   logo?: string;
+  signature?: string;
 }
 
 export interface Document {
@@ -65,4 +69,15 @@ export interface AppState {
   customers: Customer[];
   products: Product[];
   settings: CompanySettings;
+  lastBackupDate?: string;
+}
+
+export interface ReportRow {
+  date: string;
+  number: string;
+  customerName: string;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
 }

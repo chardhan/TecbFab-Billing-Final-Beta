@@ -1,8 +1,8 @@
 import React from 'react';
-import { 
+import {
   FileText, Users, Settings, LayoutDashboard, Receipt, Truck, FileSpreadsheet, ArrowRightLeft
 } from 'lucide-react';
-import { DocType } from './types';
+import { CompanySettings, Customer, Product, DocType } from './types';
 
 export const SST_RATE = 0.08;
 
@@ -94,3 +94,34 @@ export const amountToWords = (amount: number): string => {
   }
   return words + ' ONLY';
 };
+
+export const ORDERED_DOC_TYPES = [
+  DocType.QUOTATION,
+  DocType.PROFORMA,
+  DocType.DELIVERY_ORDER,
+  DocType.INVOICE
+];
+
+export const DEFAULT_SETTINGS: any = { // detailed definition in types, using any for quick migration or strict CompanySettings
+  name: "Techfab Solutions",
+  address: "Lot 123, Level 2, Wisma Merdeka, Jalan Sultan Ismail, 50250 Kuala Lumpur, Malaysia",
+  ssmNumber: "202401012345 (1234567-X)",
+  sstRegNo: "W10-1808-32000000",
+  phone: "+603-2166 8888",
+  email: "billing@techfab.com.my",
+  bankName: "Maybank",
+  bankAccount: "5140-1234-5678",
+  sstRate: 0.08,
+  logo: "",
+  signature: ""
+};
+
+export const DEFAULT_CUSTOMERS: any[] = [
+  { id: 'c1', name: 'Petronas Dagangan Bhd', address: 'Level 40, Tower 1, PETRONAS Twin Towers, 50088 Kuala Lumpur', email: 'procurement@petronas.com', phone: '03-20515000', attentionTo: 'En. Ahmad' },
+  { id: 'c2', name: 'Maxis Broadband Sdn Bhd', address: 'Level 18, Menara Maxis, Kuala Lumpur City Centre, 50088 KL', email: 'accounts@maxis.com.my', phone: '03-23307000' }
+];
+
+export const DEFAULT_PRODUCTS: any[] = [
+  { id: 'p1', name: 'Consultation Fee', price: 150.00, description: 'Professional technical consultation (Hourly)', taxRate: 0.08 },
+  { id: 'p2', name: 'Site Visit', price: 300.00, description: 'On-site inspection and travel expenses', taxRate: 0 }
+];

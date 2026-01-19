@@ -22,6 +22,22 @@ const formatDisplayDate = (dateStr: string) => {
   return d;
 };
 
+// --- 💡 核心：独立页码添加函数 ---
+// 在所有内容绘制完成后执行，不会影响原有排版架构
+const addPageNumbers = (docPdf: jsPDF) => {
+  const pageCount = docPdf.internal.getNumberOfPages();
+  const pageWidth = docPdf.internal.pageSize.getWidth();
+  const pageHeight = docPdf.internal.pageSize.getHeight();
+
+  for (let i = 1; i <= pageCount; i++) {
+    docPdf.setPage(i);
+    // 使用 7 号小字体，浅灰色 (160, 160, 160)
+    docPdf.setFontSize(7).setFont('helvetica', 'normal').setTextColor(160, 160, 160);
+    // 定位在右下角
+    docPdf.text(`Page ${i} / ${pageCount}`, pageWidth - 20, pageHeight - 10, { align: 'right' });
+  }
+};
+
 export const generateDocumentPDF = async (doc: Document, customer: Customer, settings: CompanySettings) => {
   const docPdf = new jsPDF();
   const meta = DOC_META[doc.type] || DOC_META[DocType.INVOICE];
@@ -116,7 +132,7 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
 
   autoTable(docPdf, {
     startY: tableStartY, 
-    margin: { bottom: 0 }, 
+    margin: { bottom: 15 }, // 👈 微调：留出 15mm 底部空间放置页码
     styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
     head: tableHead,
     body: tableBody,
@@ -126,22 +142,18 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   });
 
   // @ts-ignore
-  let finalY = docPdf.lastAutoTable.finalY + 8; // 表格结束后的起始高度
+  let finalY = docPdf.lastAutoTable.finalY + 8;
   const pageHeight = docPdf.internal.pageSize.getHeight();
   const sigY = pageHeight - 65; 
 
-  // --- ✅ 5. Total QTY 逻辑 (精准显示在 QTY 列下方) ---
   const totalQty = doc.items.reduce((s, i) => s + i.quantity, 0);
-  
-  // 计算 QTY 列的中心 X 坐标
   const qtyCenterX = isDO ? 177.5 : 112.5;
 
   docPdf.setFontSize(9).setFont('helvetica', 'bold').setTextColor(30, 41, 59);
   docPdf.text(`Total Qty: ${totalQty}`, qtyCenterX, finalY, { align: 'center' });
   
-  finalY += 8; // 为接下来的内容留出空间
+  finalY += 8; 
 
-  // --- 6. 金额汇总 (如果是 Invoice) ---
   if (!isDO) {
     const subtotal = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
     const taxTotal = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice * (i.taxRate || 0)), 0);
@@ -174,7 +186,6 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
     finalY += 35;
   }
 
-  // --- 7. Footer & Signatures ---
   if (doc.notes) {
     if (finalY > sigY - 10) { docPdf.addPage(); finalY = 20; }
     docPdf.setFontSize(6).setFont('helvetica', 'bold').text('NOTES: ', 20, finalY);
@@ -209,7 +220,6 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   
   if (settings.signature) {
     try {
-      // 这里的坐标 (125, sigY+2) 是根据您的布局计算的，刚好放在线上面
       docPdf.addImage(settings.signature, 'PNG', 125, sigY + 2, 50, 20, undefined, 'FAST');
     } catch (e) { console.error('Sig error', e); }
   }
@@ -217,7 +227,9 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   docPdf.line(125, sigY + 25, 190, sigY + 25);
   docPdf.setFont('helvetica', 'normal').setFontSize(7).text(settings.name, 125, sigY + 30);
 
-  // --- 📱 保存/打开逻辑 (保留您原本的逻辑) ---
+  // --- 📱 保存前盖章页码 ---
+  addPageNumbers(docPdf);
+
   const fileName = `${doc.type}_${doc.number.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
   if (Capacitor.isNativePlatform()) {
     try {
@@ -230,17 +242,10 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   }
 };
 
-/**
- * --- ✅ 新增：生成月度汇总报告 PDF (已更新：包含折扣列) ---
- * @param monthData 包含单据列表的数组 (需包含 discount 字段)
- * @param settings 公司设置
- * @param period 周期描述（例如 "January 2026"）
- */
 export const generateSummaryPDF = async (monthData: any[], settings: CompanySettings, period: string) => {
   const docPdf = new jsPDF();
   let startY = 20;
 
-  // 1. Header & Logo (复用您现有的头部样式)
   if (settings.logo) {
     try {
       docPdf.addImage(settings.logo, 'PNG', 20, 10, 25, 20, undefined, 'FAST');
@@ -257,15 +262,13 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
   docPdf.text(safeStr(settings.name), 20, startY);
   docPdf.setFontSize(8).setFont('helvetica', 'normal').text(`SSM: ${safeStr(settings.ssmNumber)}`, 20, startY + 5);
 
-  // 2. Summary Logic
   const totals = monthData.reduce((acc, d) => ({
     subtotal: acc.subtotal + d.subtotal,
-    discount: acc.discount + (d.discount || 0), // ✅ 新增：汇总折扣
+    discount: acc.discount + (d.discount || 0),
     tax: acc.tax + d.tax,
     grandTotal: acc.grandTotal + d.total
   }), { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 });
 
-  // 3. Quick Stats Cards (简单的汇总信息显示)
   docPdf.setFillColor(248, 250, 252);
   docPdf.roundedRect(20, startY + 15, 170, 20, 3, 3, 'F');
   
@@ -274,24 +277,23 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
   docPdf.text('TOTAL TAX (SST)', 90, startY + 23);
   docPdf.text('DOC COUNT', 150, startY + 23);
 
-  docPdf.setFontSize(10).setTextColor(16, 185, 129); // Emerald color
+  docPdf.setFontSize(10).setTextColor(16, 185, 129); 
   docPdf.text(formatCurrency(totals.grandTotal), 30, startY + 29);
-  docPdf.setTextColor(59, 130, 246); // Blue color
+  docPdf.setTextColor(59, 130, 246); 
   docPdf.text(formatCurrency(totals.tax), 90, startY + 29);
   docPdf.setTextColor(30, 41, 59);
   docPdf.text(`${monthData.length} Docs`, 150, startY + 29);
 
-  // 4. Detailed Table (✅ 已更新：包含 Discount 列)
   autoTable(docPdf, {
     startY: startY + 45,
-    // 👇👇👇 增加 "Discount" 列 👇👇👇
+    margin: { bottom: 15 }, 
     head: [['Date', 'Number', 'Customer', 'Subtotal', 'Discount', 'Tax', 'Total']],
     body: monthData.map(d => [
       formatDisplayDate(d.date),
       d.number,
       d.customerName,
       formatCurrency(d.subtotal),
-      d.discount > 0 ? `-${formatCurrency(d.discount)}` : '-', // ✅ 新增：显示折扣金额
+      d.discount > 0 ? `-${formatCurrency(d.discount)}` : '-', 
       formatCurrency(d.tax),
       formatCurrency(d.total)
     ]),
@@ -300,13 +302,15 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
     styles: { fontSize: 8 },
     columnStyles: {
       3: { halign: 'right' },
-      4: { halign: 'right', textColor: [220, 38, 38] }, // Discount 红色
+      4: { halign: 'right', textColor: [220, 38, 38] }, 
       5: { halign: 'right' },
       6: { halign: 'right' }
     }
   });
 
-  // 5. Saving Logic (复用您现有的平台判断逻辑)
+  // --- 📱 保存前盖章页码 ---
+  addPageNumbers(docPdf);
+
   const reportName = `Report_${period.replace(/\s+/g, '_')}.pdf`;
   if (Capacitor.isNativePlatform()) {
     try {

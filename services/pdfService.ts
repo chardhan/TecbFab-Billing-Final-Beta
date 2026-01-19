@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Document, Customer, CompanySettings, DocType } from '../types';
+import { Document, Customer, CompanySettings, DocType, ReportRow } from '../types';
 import { formatCurrency, amountToWords, DOC_META } from '../constants';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -25,7 +25,7 @@ const formatDisplayDate = (dateStr: string) => {
 // --- 💡 核心：独立页码添加函数 ---
 // 在所有内容绘制完成后执行，不会影响原有排版架构
 const addPageNumbers = (docPdf: jsPDF) => {
-  const pageCount = docPdf.internal.getNumberOfPages();
+  const pageCount = (docPdf.internal as any).getNumberOfPages();
   const pageWidth = docPdf.internal.pageSize.getWidth();
   const pageHeight = docPdf.internal.pageSize.getHeight();
 
@@ -54,14 +54,14 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
 
   docPdf.setFontSize(18).setTextColor(30, 41, 59).text(safeStr(settings.name), 20, headerStartY);
   docPdf.setFontSize(8).setTextColor(71, 85, 105).text(`(SSM: ${safeStr(settings.ssmNumber)})`, 20, headerStartY + 5);
-  
+
   if (settings.sstRegNo) {
-     docPdf.text(`SST ID: ${safeStr(settings.sstRegNo)}`, 20, headerStartY + 9);
+    docPdf.text(`SST ID: ${safeStr(settings.sstRegNo)}`, 20, headerStartY + 9);
   }
 
   const addrLines = docPdf.splitTextToSize(safeStr(settings.address), 75);
   docPdf.setFontSize(9).text(addrLines, 20, headerStartY + (settings.sstRegNo ? 14 : 10));
-  
+
   const contactY = headerStartY + (settings.sstRegNo ? 14 : 10) + (addrLines.length * 4);
   docPdf.text(`Tel: ${safeStr(settings.phone)} | Email: ${safeStr(settings.email)}`, 20, contactY);
 
@@ -71,34 +71,35 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   docPdf.text(title, 190, headerStartY + 5, { align: 'right' });
 
   docPdf.setFontSize(10).setFont('helvetica', 'normal').setTextColor(71, 85, 105);
-  docPdf.text(`No:    ${safeStr(doc.number)}`, 190, headerStartY + 15, { align: 'right' });
+  // ✅ Replace underscores with hyphens only for display
+  docPdf.text(`No:    ${safeStr(doc.number).replace(/_/g, '-')}`, 190, headerStartY + 15, { align: 'right' });
   docPdf.text(`Date:        ${formatDisplayDate(doc.date)}`, 190, headerStartY + 20, { align: 'right' });
 
   // --- 3. Recipient Info ---
   docPdf.setFontSize(10).setFont('helvetica', 'bold').setTextColor(30, 41, 59);
   docPdf.text(isDO ? 'DELIVER TO:' : 'BILL TO:', 20, headerStartY + 35);
   docPdf.setFont('helvetica', 'bold').text(safeStr(customer.name), 20, headerStartY + 40);
-  docPdf.setFont('helvetica', 'normal'); 
+  docPdf.setFont('helvetica', 'normal');
   const custAddrLines = docPdf.splitTextToSize(safeStr(customer.address), 80);
   docPdf.text(custAddrLines, 20, headerStartY + 45);
 
-  let custInfoY = headerStartY + 45 + (custAddrLines.length * 5); 
+  let custInfoY = headerStartY + 45 + (custAddrLines.length * 5);
   let contactLine = '';
   if (customer.attentionTo) contactLine += `Attn: ${safeStr(customer.attentionTo)}`;
   if (customer.phone) {
-      if (contactLine) contactLine += '  '; 
-      contactLine += `Tel: ${safeStr(customer.phone)}`;
+    if (contactLine) contactLine += '  ';
+    contactLine += `Tel: ${safeStr(customer.phone)}`;
   }
   if (contactLine) {
-      docPdf.text(contactLine, 20, custInfoY);
-      custInfoY += 5;
+    docPdf.text(contactLine, 20, custInfoY);
+    custInfoY += 5;
   }
 
   // --- 4. Dynamic Table ---
   const tableStartY = Math.max(85, custInfoY + 10);
-  
-  const tableHead = isDO 
-    ? [['#', 'Description', 'Qty']] 
+
+  const tableHead = isDO
+    ? [['#', 'Description', 'Qty']]
     : [['#', 'Description', 'Qty', 'Price', 'Tax', 'Total']];
 
   const tableBody = doc.items.map((item, idx) => {
@@ -106,53 +107,53 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
       return [idx + 1, item.description, item.quantity];
     }
     return [
-      idx + 1, 
-      item.description, 
-      item.quantity, 
+      idx + 1,
+      item.description,
+      item.quantity,
       formatCurrency(item.unitPrice),
       `${(item.taxRate * 100).toFixed(0)}%`,
       formatCurrency(item.quantity * item.unitPrice)
     ];
   });
 
-  const tableColStyles = isDO 
+  const tableColStyles = isDO
     ? {
-        0: { cellWidth: 10 },
-        1: { cellWidth: 'auto' },
-        2: { cellWidth: 25, halign: 'center' }
-      }
+      0: { cellWidth: 10 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 25, halign: 'center' }
+    }
     : {
-        0: { cellWidth: 10 },
-        1: { cellWidth: 'auto' },
-        2: { cellWidth: 15, halign: 'center' },
-        3: { cellWidth: 25, halign: 'right' },
-        4: { cellWidth: 15, halign: 'center' },
-        5: { cellWidth: 30, halign: 'right' }
-      };
+      0: { cellWidth: 10 },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 15, halign: 'center' },
+      3: { cellWidth: 25, halign: 'right' },
+      4: { cellWidth: 15, halign: 'center' },
+      5: { cellWidth: 30, halign: 'right' }
+    };
 
   autoTable(docPdf, {
-    startY: tableStartY, 
+    startY: tableStartY,
     margin: { bottom: 15 }, // 👈 微调：留出 15mm 底部空间放置页码
     styles: { fontSize: 8, cellPadding: 1.5, valign: 'middle' },
     head: tableHead,
     body: tableBody,
-    theme: 'grid', 
+    theme: 'grid',
     headStyles: { fillColor: [30, 41, 59], fontSize: 9, minCellHeight: 8 },
-    columnStyles: tableColStyles
+    columnStyles: tableColStyles as any
   });
 
   // @ts-ignore
   let finalY = docPdf.lastAutoTable.finalY + 8;
   const pageHeight = docPdf.internal.pageSize.getHeight();
-  const sigY = pageHeight - 65; 
+  const sigY = pageHeight - 65;
 
   const totalQty = doc.items.reduce((s, i) => s + i.quantity, 0);
   const qtyCenterX = isDO ? 177.5 : 112.5;
 
   docPdf.setFontSize(9).setFont('helvetica', 'bold').setTextColor(30, 41, 59);
   docPdf.text(`Total Qty: ${totalQty}`, qtyCenterX, finalY, { align: 'center' });
-  
-  finalY += 8; 
+
+  finalY += 8;
 
   if (!isDO) {
     const subtotal = doc.items.reduce((s, i) => s + (i.quantity * i.unitPrice), 0);
@@ -161,13 +162,13 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
 
     if (finalY + 35 > sigY - 10) { docPdf.addPage(); finalY = 20; }
 
-    const labelX = 140; 
+    const labelX = 140;
     const valueX = 190;
-    
+
     docPdf.setFontSize(10).setFont('helvetica', 'normal').setTextColor(71, 85, 105);
     docPdf.text('Subtotal :', labelX, finalY);
     docPdf.text(formatCurrency(subtotal), valueX, finalY, { align: 'right' });
-    
+
     docPdf.text('Tax Total :', labelX, finalY + 7);
     docPdf.text(formatCurrency(taxTotal), valueX, finalY + 7, { align: 'right' });
 
@@ -179,10 +180,10 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
     docPdf.setFont('helvetica', 'bold').setFontSize(11).setTextColor(30, 41, 59);
     docPdf.text('TOTAL :', labelX, finalY + 22);
     docPdf.text(formatCurrency(grandTotal), valueX, finalY + 22, { align: 'right' });
-    
+
     docPdf.setFontSize(5).setFont('helvetica', 'bold');
     docPdf.text(amountToWords(grandTotal), 20, finalY + 22);
-    
+
     finalY += 35;
   }
 
@@ -191,11 +192,11 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
     docPdf.setFontSize(6).setFont('helvetica', 'bold').text('NOTES: ', 20, finalY);
     const labelWidth = docPdf.getTextWidth('NOTES: ');
     docPdf.setFont('helvetica', 'normal');
-    const contentX = 20 + labelWidth + 1.5; 
+    const contentX = 20 + labelWidth + 1.5;
     const maxWidth = 190 - contentX;
     const notesLines = docPdf.splitTextToSize(safeStr(doc.notes), maxWidth);
     docPdf.text(notesLines, contentX, finalY);
-    finalY += (notesLines.length * 3.5); 
+    finalY += (notesLines.length * 3.5);
   }
 
   if (finalY > sigY - 10) docPdf.addPage();
@@ -203,21 +204,21 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
   docPdf.setFontSize(9).setFont('helvetica', 'bold');
   if (isDO || doc.type === DocType.QUOTATION) {
     docPdf.text(isDO ? 'RECEIVED BY:' : 'ACCEPTED BY:', 20, sigY);
-    docPdf.line(20, sigY + 25, 85, sigY + 25); 
+    docPdf.line(20, sigY + 25, 85, sigY + 25);
     docPdf.setFont('helvetica', 'normal').setFontSize(7);
     docPdf.text(isDO ? 'Authorized Signature & Stamp' : 'Authorized Signature & Chop', 20, sigY + 30);
     docPdf.text('Name / Date:', 20, sigY + 34);
   }
 
   if (!isDO && doc.type !== DocType.QUOTATION) {
-     docPdf.text('PAYMENT INFO:', 20, sigY);
-     docPdf.setFont('helvetica', 'normal').setFontSize(8);
-     docPdf.text(`Bank: ${settings.bankName}`, 20, sigY + 5);
-     docPdf.text(`Acc No: ${settings.bankAccount}`, 20, sigY + 10);
+    docPdf.text('PAYMENT INFO:', 20, sigY);
+    docPdf.setFont('helvetica', 'normal').setFontSize(8);
+    docPdf.text(`Bank: ${settings.bankName}`, 20, sigY + 5);
+    docPdf.text(`Acc No: ${settings.bankAccount}`, 20, sigY + 10);
   }
 
   docPdf.setFont('helvetica', 'bold').setFontSize(9).text('ISSUED BY:', 125, sigY);
-  
+
   if (settings.signature) {
     try {
       docPdf.addImage(settings.signature, 'PNG', 125, sigY + 2, 50, 20, undefined, 'FAST');
@@ -236,13 +237,15 @@ export const generateDocumentPDF = async (doc: Document, customer: Customer, set
       const pdfBase64 = docPdf.output('datauristring').split(',')[1];
       const savedFile = await Filesystem.writeFile({ path: fileName, data: pdfBase64, directory: Directory.Documents, recursive: true });
       await FileOpener.open({ filePath: savedFile.uri, contentType: 'application/pdf' });
-    } catch (e) { alert('PDF Error: ' + JSON.stringify(e)); }
+    } catch (e) {
+      throw new Error('PDF Error: ' + JSON.stringify(e));
+    }
   } else {
     docPdf.save(fileName);
   }
 };
 
-export const generateSummaryPDF = async (monthData: any[], settings: CompanySettings, period: string) => {
+export const generateSummaryPDF = async (monthData: ReportRow[], settings: CompanySettings, period: string) => {
   const docPdf = new jsPDF();
   let startY = 20;
 
@@ -271,29 +274,29 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
 
   docPdf.setFillColor(248, 250, 252);
   docPdf.roundedRect(20, startY + 15, 170, 20, 3, 3, 'F');
-  
+
   docPdf.setFontSize(9).setFont('helvetica', 'bold').setTextColor(30, 41, 59);
   docPdf.text('TOTAL REVENUE', 30, startY + 23);
   docPdf.text('TOTAL TAX (SST)', 90, startY + 23);
   docPdf.text('DOC COUNT', 150, startY + 23);
 
-  docPdf.setFontSize(10).setTextColor(16, 185, 129); 
+  docPdf.setFontSize(10).setTextColor(16, 185, 129);
   docPdf.text(formatCurrency(totals.grandTotal), 30, startY + 29);
-  docPdf.setTextColor(59, 130, 246); 
+  docPdf.setTextColor(59, 130, 246);
   docPdf.text(formatCurrency(totals.tax), 90, startY + 29);
   docPdf.setTextColor(30, 41, 59);
   docPdf.text(`${monthData.length} Docs`, 150, startY + 29);
 
   autoTable(docPdf, {
     startY: startY + 45,
-    margin: { bottom: 15 }, 
+    margin: { bottom: 15 },
     head: [['Date', 'Number', 'Customer', 'Subtotal', 'Discount', 'Tax', 'Total']],
     body: monthData.map(d => [
       formatDisplayDate(d.date),
       d.number,
       d.customerName,
       formatCurrency(d.subtotal),
-      d.discount > 0 ? `-${formatCurrency(d.discount)}` : '-', 
+      d.discount > 0 ? `-${formatCurrency(d.discount)}` : '-',
       formatCurrency(d.tax),
       formatCurrency(d.total)
     ]),
@@ -302,10 +305,10 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
     styles: { fontSize: 8 },
     columnStyles: {
       3: { halign: 'right' },
-      4: { halign: 'right', textColor: [220, 38, 38] }, 
+      4: { halign: 'right', textColor: [220, 38, 38] },
       5: { halign: 'right' },
       6: { halign: 'right' }
-    }
+    } as any
   });
 
   // --- 📱 保存前盖章页码 ---
@@ -317,7 +320,9 @@ export const generateSummaryPDF = async (monthData: any[], settings: CompanySett
       const pdfBase64 = docPdf.output('datauristring').split(',')[1];
       const savedFile = await Filesystem.writeFile({ path: reportName, data: pdfBase64, directory: Directory.Documents, recursive: true });
       await FileOpener.open({ filePath: savedFile.uri, contentType: 'application/pdf' });
-    } catch (e) { alert('Summary PDF Error: ' + JSON.stringify(e)); }
+    } catch (e) {
+      throw new Error('Summary PDF Error: ' + JSON.stringify(e));
+    }
   } else {
     docPdf.save(reportName);
   }

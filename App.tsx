@@ -10,12 +10,13 @@ import {
   Truck, ArrowRightLeft, ArrowRight, Menu, X, Image as ImageIcon, Clock, 
   CheckCircle, CreditCard, Ban, Activity, CalendarDays, Pencil, Package, 
   ShieldCheck, Key, Globe, RotateCcw, Trash, BarChart3, ChevronDown, Landmark, Save,
-  Mail, Phone
+  Mail, Phone, Unlock, Fingerprint, Hash, ShieldCheck as Shield
 } from 'lucide-react';
 import { DocType, AppState, Document, Customer, CompanySettings, LineItem, Product } from './types';
 import { DOC_META, NAV_ITEMS, formatCurrency, roundTo } from './constants';
 import { generateDocumentPDF, generateSummaryPDF } from './services/pdfService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { App as CapApp } from '@capacitor/app';
 
 // --- 🌐 多语言字典 ---
 type Lang = 'en' | 'zh' | 'ms';
@@ -93,13 +94,18 @@ const TRANSLATIONS = {
     showing_records: "Showing {count} of {total} records",
     mark_paid: "Mark as Paid",
     mark_unpaid: "Mark as Unpaid",
-    // ✅ 新增翻译
     backup_title: "Security Reminder / Backup Required",
     backup_msg_long: "You haven't backed up your data for a long time.",
     backup_msg_days: "You haven't backed up in {days} days.",
     backup_go_to_settings: "Please go to settings to backup.",
     backup_now: "Backup Now",
-    month_report: "Month Report"
+    month_report: "Month Report",
+    confirm_payment: "Confirm this invoice is fully paid?",
+    unlock_field: "Enter Admin Password to unlock this field:",
+    access_denied_toast: "Unauthorized! Field remains locked.",
+    tin_number: "TIN",
+    brn_number: "BRN",
+    msic_code: "MSIC Code"
   },
   zh: {
     dashboard: "仪表盘",
@@ -173,13 +179,18 @@ const TRANSLATIONS = {
     showing_records: "正在显示 {count} / {total} 条记录",
     mark_paid: "标记为已付",
     mark_unpaid: "标记为未付",
-    // ✅ 新增翻译
     backup_title: "数据安全提醒",
     backup_msg_long: "你已经很久没有备份数据了。",
     backup_msg_days: "你已经有 {days} 天没有备份数据了。",
     backup_go_to_settings: "请前往设置进行备份。",
     backup_now: "立即备份",
-    month_report: "本月报表"
+    month_report: "本月报表",
+    confirm_payment: "确定该发票已全额收款吗？",
+    unlock_field: "安全验证：请输入管理员密码以解锁此字段：",
+    access_denied_toast: "授权失败！字段仍处于锁定状态。",
+    tin_number: "TIN 税号",
+    brn_number: "BRN 注册号",
+    msic_code: "MSIC 业务代码"
   },
   ms: {
     dashboard: "Papan Pemuka",
@@ -253,13 +264,18 @@ const TRANSLATIONS = {
     showing_records: "Memaparkan {count} daripada {total} rekod",
     mark_paid: "Tanda Sudah Bayar",
     mark_unpaid: "Tanda Belum Bayar",
-    // ✅ 新增翻译
     backup_title: "Peringatan Keselamatan Data",
     backup_msg_long: "Anda sudah lama tidak membuat sandaran data.",
     backup_msg_days: "Anda sudah {days} hari tidak membuat sandaran.",
     backup_go_to_settings: "Sila pergi ke tetapan untuk sandaran.",
     backup_now: "Sandar Sekarang",
-    month_report: "Laporan Bulan"
+    month_report: "Laporan Bulan",
+    confirm_payment: "Sahkan invois ini telah dibayar sepenuhnya?",
+    unlock_field: "Sahkan: Masukkan Kata Laluan Admin untuk membuka kunci:",
+    access_denied_toast: "Tiada akses! Medan tetap dikunci.",
+    tin_number: "No. TIN",
+    brn_number: "No. BRN",
+    msic_code: "Kod MSIC"
   }
 };
 
@@ -339,7 +355,7 @@ const compressBase64 = (base64Str: string, maxWidth: number, maxHeight: number, 
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      resolve(canvas.toDataURL('image/png')); 
     };
   });
 };
@@ -382,7 +398,7 @@ const Sidebar = ({ isOpen, onClose, onLogout, lang, setLang }: { isOpen: boolean
   return (
     <>
       {isOpen && <div className="fixed inset-0 bg-slate-900/60 z-40 lg:hidden backdrop-blur-sm" onClick={onClose} />}
-      <aside className={`fixed lg:sticky top-0 left-0 z-50 w-64 bg-slate-900 text-slate-300 flex flex-col h-screen transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'} border-r border-slate-800 no-print`}>
+      <aside className={`fixed lg:sticky top-0 left-0 z-50 w-64 lg:w-60 xl:w-64 bg-slate-900 text-slate-300 flex flex-col h-screen transition-transform duration-300 lg:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'} border-r border-slate-800 no-print`}>
         <div className="pt-[calc(env(safe-area-inset-top)+12px)] p-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center font-bold text-white text-xl shadow-lg shadow-emerald-500/20">TF</div>
@@ -483,13 +499,13 @@ const TaxReport = ({ state, lang }: { state: AppState, lang: Lang }) => {
         </div>
         <div className="flex flex-wrap items-center gap-3">
             <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-               <label className="text-xs font-black text-slate-400 uppercase px-2">{t('select_month')}</label>
-               <input 
-                 type="month" 
-                 className="bg-slate-50 border-none rounded-lg px-3 py-1.5 font-bold text-slate-900 outline-none"
-                 value={selectedMonth}
-                 onChange={(e) => setSelectedMonth(e.target.value)}
-               />
+                <label className="text-xs font-black text-slate-400 uppercase px-2">{t('select_month')}</label>
+                <input 
+                  type="month" 
+                  className="bg-slate-50 border-none rounded-lg px-3 py-1.5 font-bold text-slate-900 outline-none"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                />
             </div>
             <button 
               onClick={handleDownloadSummary}
@@ -499,7 +515,7 @@ const TaxReport = ({ state, lang }: { state: AppState, lang: Lang }) => {
             </button>
         </div>
       </header>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="bg-slate-900 text-white p-8 rounded-[2rem] shadow-xl relative overflow-hidden">
            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-2">Consolidated Total</p>
@@ -509,7 +525,7 @@ const TaxReport = ({ state, lang }: { state: AppState, lang: Lang }) => {
               <div className="text-right"><p className="text-[10px] text-slate-400 font-bold uppercase">Invoices</p><p className="font-bold">{summary.count}</p></div>
            </div>
         </div>
-        <div className="md:col-span-2 bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-center">
+        <div className="md:col-span-1 lg:col-span-2 bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col justify-center">
            <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center"><FileText className="w-6 h-6" /></div>
               <div><h3 className="font-extrabold text-slate-900">{t('invoice_range')}</h3><p className="text-slate-500 text-sm font-medium">Sequential tracking for e-Invoice compliance</p></div>
@@ -523,7 +539,7 @@ const TaxReport = ({ state, lang }: { state: AppState, lang: Lang }) => {
            <span className="text-[10px] font-bold text-slate-400">Total {monthlyInvoices.length} items</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left min-w-[700px]">
             <thead>
               <tr className="bg-slate-50/30 border-b border-slate-100">
                 <th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_number')}</th>
@@ -535,7 +551,7 @@ const TaxReport = ({ state, lang }: { state: AppState, lang: Lang }) => {
             <tbody className="divide-y divide-slate-100">
               {monthlyInvoices.map(doc => (
                 <tr key={doc.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-6 py-4 font-bold text-slate-900">{doc.number}</td>
+                  <td className="px-6 py-4 font-bold text-slate-900 whitespace-nowrap">{doc.number}</td>
                   <td className="px-6 py-4 text-sm text-slate-500 font-medium">{doc.date}</td>
                   <td className="px-6 py-4 text-sm font-medium text-slate-700 truncate max-w-[200px]">{state.customers.find(c => c.id === doc.customerId)?.name}</td>
                   <td className="px-6 py-4 text-right font-black text-slate-900">{formatCurrency(calculateGrandTotal(doc))}</td>
@@ -726,9 +742,17 @@ const DocumentsList = ({ state, onDelete, onConvert, onUpdateStatus, lang }: { s
     const customer = state.customers.find(c => c.id === doc.customerId);
     if (customer) {
       try { 
-        const cleanNumber = doc.number.replace(/[^a-zA-Z0-9-]/g, '_');
+        if (Capacitor.isNativePlatform()) {
+          const perm = await Filesystem.checkPermissions();
+          if (perm.publicStorage !== 'granted') {
+             await Filesystem.requestPermissions();
+          }
+        }
+        const cleanNumber = doc.number.replace(/[^a-zA-Z0-9]/g, '_');
         await generateDocumentPDF({...doc, number: cleanNumber.trim()}, customer, state.settings); 
-      } catch (err: any) { alert(`PDF Error (0013): 请确保单号中不含特殊字符。`); }
+      } catch (err: any) { 
+        alert(`PDF Error (0013): 无法保存文件。请确保已允许 App 访问存储空间。详细: ${err.message || err}`);
+      }
     }
   };
 
@@ -748,7 +772,7 @@ const DocumentsList = ({ state, onDelete, onConvert, onUpdateStatus, lang }: { s
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[600px]">
+          <table className="w-full text-left min-w-[700px]">
             <thead><tr className="bg-slate-50/50 border-b border-slate-100"><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_number')}</th><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_type')}</th><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('customer')}</th><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('total')}</th><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest text-right">{t('actions')}</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {pagedDocs.map(doc => {
@@ -770,7 +794,15 @@ const DocumentsList = ({ state, onDelete, onConvert, onUpdateStatus, lang }: { s
                       <div className="flex justify-end gap-2 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
                         {doc.type === DocType.INVOICE && (
                           <button 
-                            onClick={() => onUpdateStatus(doc.id, doc.status === 'Paid' ? 'Draft' : 'Paid')} 
+                            onClick={() => {
+                              const nextStatus = doc.status === 'Paid' ? 'Draft' : 'Paid';
+                              if (nextStatus === 'Paid') {
+                                const msg = lang === 'zh' ? TRANSLATIONS.zh.confirm_payment : (lang === 'ms' ? TRANSLATIONS.ms.confirm_payment : TRANSLATIONS.en.confirm_payment);
+                                if (window.confirm(msg)) onUpdateStatus(doc.id, nextStatus);
+                              } else {
+                                onUpdateStatus(doc.id, nextStatus);
+                              }
+                            }} 
                             className={`p-3 rounded-lg transition-all ${doc.status === 'Paid' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'}`}
                             title={doc.status === 'Paid' ? t('mark_unpaid') : t('mark_paid')}
                           >
@@ -813,7 +845,7 @@ const RecycleBin = ({ state, onRestore, onPermanentDelete, lang }: { state: AppS
       <header><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{t('recycle_bin')}</h1><p className="text-slate-500">View and recover recently deleted records.</p></header>
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[600px]">
+          <table className="w-full text-left min-w-[700px]">
             <thead><tr className="bg-slate-50/50 border-b border-slate-100"><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_number')}</th><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_type')}</th><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('customer')}</th><th className="px-6 py-4 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest text-right">{t('actions')}</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {deletedDocs.map(doc => {
@@ -841,14 +873,18 @@ const RecycleBin = ({ state, onRestore, onPermanentDelete, lang }: { state: AppS
   );
 };
 
-const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: Document) => void, lang: Lang }) => {
+const DocumentForm = ({ state, onSave, lang, adminPassword }: { state: AppState, onSave: (doc: Document) => void, lang: Lang, adminPassword: string }) => {
   const navigate = useNavigate();
   const { id } = useParams();
   const t = (key: keyof typeof TRANSLATIONS['en']) => TRANSLATIONS[lang][key];
+
+  const [isLocked, setIsLocked] = useState(true);
+
   const initialData = useMemo(() => {
     const type = DocType.QUOTATION;
     return { type, number: getNextDocNumber(state.documents, type, DOC_META[type].prefix) };
   }, [state.documents]);
+
   const [doc, setDoc] = useState<Partial<Document>>({
     id: Math.random().toString(36).substr(2, 9),
     type: initialData.type,
@@ -859,17 +895,31 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
     status: 'Draft',
     discount: 0,
   });
+
   useEffect(() => { if (id) { const existingDoc = state.documents.find(d => d.id === id); if (existingDoc) setDoc(existingDoc); } }, [id, state.documents]);
+  
   const subtotal = useMemo(() => doc.items?.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice), 0) || 0, [doc.items]);
   const tax = useMemo(() => doc.items?.reduce((s, i) => s + roundTo(i.quantity * i.unitPrice * (i.taxRate || 0)), 0) || 0, [doc.items]);
   const total = roundTo(subtotal + tax - (doc.discount || 0));
+
+  const handleUnlock = () => {
+    const pass = prompt(t('unlock_field'));
+    if (pass === adminPassword) {
+      setIsLocked(false);
+    } else if (pass !== null) {
+      alert(t('access_denied_toast'));
+    }
+  };
+
   const addItem = () => { setDoc(prev => ({ ...prev, items: [...(prev.items || []), { id: Math.random().toString(), description: '', quantity: 0, unitPrice: 0, taxRate: 0 }] })); };
   const removeItem = (id: string) => { setDoc(prev => ({ ...prev, items: prev.items?.filter(i => i.id !== id) })); };
   const updateItem = (id: string, field: keyof LineItem, value: any) => { setDoc(prev => ({ ...prev, items: prev.items?.map(i => i.id === id ? { ...i, [field]: value } : i) })); };
+  
   const handleProductSelect = (itemId: string, productId: string) => {
     const product = (state.products || []).find(p => p.id === productId);
     if (product) { setDoc(prev => ({ ...prev, items: prev.items?.map(i => i.id === itemId ? { ...i, description: product.description || product.name, unitPrice: product.price, taxRate: product.taxRate !== undefined ? product.taxRate : state.settings.sstRate } : i) })); }
   };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!doc.customerId) { alert(lang === 'zh' ? "❌ 请选择客户" : "Please select customer"); return; }
@@ -878,24 +928,14 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
     for (let i = 0; i < (doc.items || []).length; i++) {
         const item = doc.items![i];
         const rowNum = i + 1;
-
-        if (!item.description || !item.description.trim()) { 
-            alert(lang === 'zh' ? `❌ 第 ${rowNum} 行错误：项目描述不能为空！` : `❌ Row ${rowNum} Error: Description cannot be empty!`); 
-            return; 
-        }
-        if (item.quantity < 1) { 
-            alert(lang === 'zh' ? `❌ 第 ${rowNum} 行错误：数量必须至少为 1！` : `❌ Row ${rowNum} Error: Quantity must be at least 1!`); 
-            return; 
-        }
-        if (item.unitPrice < 0.01) { 
-            alert(lang === 'zh' ? `❌ 第 ${rowNum} 行错误：单价不能少过 RM 0.01！` : `❌ Row ${rowNum} Error: Price must be at least 0.01!`); 
-            return; 
-        }
+        if (!item.description || !item.description.trim()) { alert(lang === 'zh' ? `❌ 第 ${rowNum} 行错误：项目描述不能为空！` : `❌ Row ${rowNum} Error: Description cannot be empty!`); return; }
+        if (item.quantity < 1) { alert(lang === 'zh' ? `❌ 第 ${rowNum} 行错误：数量必须至少为 1！` : `❌ Row ${rowNum} Error: Quantity must be at least 1!`); return; }
+        if (item.unitPrice < 0.01) { alert(lang === 'zh' ? `❌ 第 ${rowNum} 行错误：单价不能少过 RM 0.01！` : `❌ Row ${rowNum} Error: Price must be at least 0.01!`); return; }
     }
-
     onSave({ ...doc, id: doc.id || Math.random().toString(36).substr(2, 9) } as Document);
     navigate('/documents');
   };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <header className="flex items-center gap-4">
@@ -907,9 +947,37 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
           <div className="space-y-2"><label className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_type')}</label>
             <select className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none" value={doc.type} onChange={(e) => !id && setDoc({...doc, type: e.target.value as DocType, number: getNextDocNumber(state.documents, e.target.value as DocType, DOC_META[e.target.value as DocType].prefix) })}>{ORDERED_DOC_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
           </div>
-          <div className="space-y-2"><label className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_number')}</label><input type="text" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none" value={doc.number} onChange={(e) => setDoc({ ...doc, number: e.target.value })} required /></div>
-          <div className="space-y-2"><label className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">Date</label><input type="date" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none" value={doc.date} onChange={(e) => setDoc({ ...doc, date: e.target.value })} required /></div>
+          
+          <div className="space-y-2">
+            <div className="flex justify-between items-center"><label className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">{t('doc_number')}</label>
+               {isLocked && <button type="button" onClick={handleUnlock} className="text-slate-400 hover:text-slate-900"><Lock className="w-3.5 h-3.5"/></button>}
+               {!isLocked && <span className="text-emerald-500"><Unlock className="w-3.5 h-3.5"/></span>}
+            </div>
+            <input 
+              type="text" 
+              className={`w-full px-4 py-2.5 rounded-xl font-bold outline-none border transition-all ${isLocked ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed' : 'bg-slate-50 border-emerald-500 text-slate-900 shadow-sm shadow-emerald-500/10'}`} 
+              value={doc.number} 
+              readOnly={isLocked}
+              onChange={(e) => setDoc({ ...doc, number: e.target.value })} 
+              required 
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center"><label className="text-xs font-extrabold text-slate-400 uppercase tracking-widest">Date</label>
+               {isLocked && <button type="button" onClick={handleUnlock} className="text-slate-400 hover:text-slate-900"><Lock className="w-3.5 h-3.5"/></button>}
+            </div>
+            <input 
+              type="date" 
+              className={`w-full px-4 py-2.5 rounded-xl font-bold outline-none border transition-all ${isLocked ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed' : 'bg-slate-50 border-emerald-500 text-slate-900 shadow-sm shadow-emerald-500/10'}`} 
+              value={doc.date} 
+              readOnly={isLocked}
+              onChange={(e) => setDoc({ ...doc, date: e.target.value })} 
+              required 
+            />
+          </div>
         </div>
+
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 space-y-6">
           <div className="flex items-center justify-between"><h3 className="text-xl font-extrabold text-slate-900 tracking-tight">{t('recipient')}</h3><Link to="/customers" className="text-sm text-emerald-600 font-bold hover:underline bg-emerald-50 px-3 py-1.5 rounded-lg transition-colors">{t('contact_directory')}</Link></div>
           <select className="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl font-semibold outline-none" value={doc.customerId} onChange={(e) => setDoc({ ...doc, customerId: e.target.value })} required><option value="">{t('select_customer')}</option>{state.customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
@@ -925,16 +993,18 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
                     <select className="text-xs font-black text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-lg outline-none cursor-pointer hover:bg-emerald-200 transition-colors shadow-sm" onChange={(e) => handleProductSelect(item.id, e.target.value)} value=""><option value="" disabled>✨ Load...</option>{(state.products || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
                     <textarea className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none resize-none" value={item.description} rows={2} onChange={(e) => updateItem(item.id, 'description', e.target.value)} />
                 </div>
-                <div className="col-span-6 md:col-span-2 space-y-2"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('quantity')}</label><input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none" value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))} /></div>
-                <div className="col-span-6 md:col-span-3 space-y-2"><label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('price')} (RM)</label><input type="number" step="0.01" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none" value={item.unitPrice} onChange={(e) => updateItem(item.id, 'unitPrice', Number(e.target.value))} /></div>
+                <div className="col-span-6 md:col-span-2 space-y-2">
+                  <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('quantity')}</label>
+                  <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none" value={item.quantity === 0 ? '' : item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value === '' ? 0 : Number(e.target.value))} />
+                </div>
+                <div className="col-span-6 md:col-span-3 space-y-2">
+                  <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('price')} (RM)</label>
+                  <input type="number" step="0.01" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none" value={item.unitPrice === 0 ? '' : item.unitPrice} onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value === '' ? 0 : Number(e.target.value))} />
+                </div>
                 <div className="col-span-6 md:col-span-2 space-y-2">
                   <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">{t('tax_rate')}</label>
                   <select className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold outline-none" value={item.taxRate !== undefined ? item.taxRate : 0} onChange={(e) => updateItem(item.id, 'taxRate', parseFloat(e.target.value))}>
-                    <option value={0}>0%</option>
-                    <option value={0.05}>5%</option>
-                    <option value={0.06}>6%</option>
-                    <option value={0.08}>8%</option>
-                    <option value={0.10}>10%</option>
+                    <option value={0}>0%</option><option value={0.05}>5%</option><option value={0.06}>6%</option><option value={0.08}>8%</option><option value={0.10}>10%</option>
                   </select>
                 </div>
                 <div className="col-span-12 md:col-span-1 flex justify-end"><button type="button" onClick={() => removeItem(item.id)} className="text-slate-300 hover:text-rose-500 transition-colors p-2 mt-6"><Trash2 className="w-5 h-5" /></button></div>
@@ -950,7 +1020,10 @@ const DocumentForm = ({ state, onSave, lang }: { state: AppState, onSave: (doc: 
             <div className="space-y-4">
               <div className="flex justify-between text-sm"><span className="text-slate-400 font-medium">{t('subtotal')}</span><span className="font-bold">{formatCurrency(subtotal)}</span></div>
               <div className="flex justify-between text-sm"><span className="text-slate-400 font-medium">{t('tax_total')}</span><span className="font-bold text-blue-400">{formatCurrency(tax)}</span></div>
-              <div className="flex justify-between items-center text-sm"><span className="text-slate-400 font-medium">{t('discount')}</span><input type="number" className="w-20 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-right outline-none" value={doc.discount} onChange={(e) => setDoc({ ...doc, discount: Number(e.target.value) })} /></div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-400 font-medium">{t('discount')}</span>
+                <input type="number" className="w-20 bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-right outline-none" value={doc.discount === 0 ? '' : doc.discount} onChange={(e) => setDoc({ ...doc, discount: e.target.value === '' ? 0 : Number(e.target.value) })} />
+              </div>
             </div>
             <div className="pt-6 mt-6 border-t border-white/10 flex justify-between items-end"><div><span className="block text-[10px] font-extrabold text-slate-500 uppercase tracking-widest mb-1">{t('total_payable')}</span><span className="text-3xl font-extrabold text-white tracking-tighter">{formatCurrency(total)}</span></div></div>
             <button type="submit" className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-extrabold rounded-2xl shadow-xl">{id ? t('save') : t('create')}</button>
@@ -995,10 +1068,18 @@ const Settings = ({ state, onSave, onReset, onExport, onImport, onChangePassword
   return (
     <div className="max-w-3xl space-y-8 animate-in fade-in duration-500 pb-20">
       <header><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{t('settings')}</h1><p className="text-slate-500">Manage business identity.</p></header>
-      <div className="bg-blue-50 rounded-2xl p-8 border border-blue-100 space-y-4">
-         <div className="flex items-center gap-3 text-blue-700"><ShieldCheck className="w-6 h-6" /><h3 className="text-lg font-extrabold">Security & Access</h3></div>
-         <div className="flex gap-4"><input type="text" placeholder="New Password" className="flex-1 px-4 py-3 bg-white rounded-xl border border-blue-200 outline-none font-bold" value={newPass} onChange={e=>setNewPass(e.target.value)} /><button onClick={()=>{ if(newPass) { onChangePassword(newPass); alert('Updated!'); setNewPass(''); } }} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-bold">{t('update_password')}</button></div>
+      
+      <div className="bg-blue-50 rounded-2xl p-6 border border-blue-100 space-y-5">
+         <div className="flex items-center gap-3 text-blue-700">
+            <ShieldCheck className="w-6 h-6 shrink-0" />
+            <h3 className="text-lg font-extrabold">Security & Access</h3>
+         </div>
+         <div className="flex flex-col gap-3">
+           <input type="text" placeholder="New Password"  className="w-full h-12 px-4 bg-white rounded-xl border border-blue-200 outline-none font-bold text-sm shadow-sm"  value={newPass}  onChange={e=>setNewPass(e.target.value)} />
+           <button onClick={()=>{ if(newPass) { onChangePassword(newPass); alert('Updated!'); setNewPass(''); } }} className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white px-6 rounded-xl font-bold text-sm shadow-md shadow-blue-600/20 active:scale-95 transition-all flex items-center justify-center">{t('update_password')}</button>
+         </div>
       </div>
+
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-8 space-y-8">
           <div className="flex flex-col sm:flex-row items-center gap-8 pb-8 border-b border-slate-100">
@@ -1048,6 +1129,11 @@ const Customers = ({ state, onAdd, onUpdate, onDelete, lang }: { state: AppState
             <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Attn To</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newC.attentionTo || ''} onChange={e => setNewC({...newC, attentionTo: e.target.value})} /></div>
             <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Phone</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newC.phone || ''} onChange={e => setNewC({...newC, phone: e.target.value})} /></div>
             <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Email</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newC.email || ''} onChange={e => setNewC({...newC, email: e.target.value})} /></div>
+            {/* 👇 新增字段输入框 */}
+            <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t('tin_number')}</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newC.tin || ''} onChange={e => setNewC({...newC, tin: e.target.value})} /></div>
+            <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t('brn_number')}</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newC.brn || ''} onChange={e => setNewC({...newC, brn: e.target.value})} /></div>
+            <div className="space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{t('msic_code')}</label><input className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newC.msic || ''} onChange={e => setNewC({...newC, msic: e.target.value})} /></div>
+            
             <div className="md:col-span-2 space-y-1"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Address</label><textarea className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold h-24 resize-none" value={newC.address || ''} onChange={e => setNewC({...newC, address: e.target.value})} /></div>
           </div>
           <div className="flex justify-end gap-3 pt-4">
@@ -1070,7 +1156,10 @@ const Customers = ({ state, onAdd, onUpdate, onDelete, lang }: { state: AppState
             <h3 className="font-extrabold text-slate-900 text-lg truncate mb-2">{c.name}</h3>
             <div className="space-y-2 mt-4">
                {c.phone && <p className="text-sm text-slate-500 font-bold flex items-center gap-2"><Phone className="w-3.5 h-3.5 text-slate-300" /> {c.phone}</p>}
-               {c.email && <p className="text-sm text-slate-500 font-bold flex items-center gap-2"><Mail className="w-3.5 h-3.5 text-slate-300" /> {c.email}</p>}
+               {/* 👇 展示新增的记录字段 */}
+               {c.tin && <p className="text-[11px] text-slate-400 font-bold flex items-center gap-2 uppercase tracking-tight"><Fingerprint className="w-3.5 h-3.5 text-slate-300" /> {t('tin_number')}: {c.tin}</p>}
+               {c.brn && <p className="text-[11px] text-slate-400 font-bold flex items-center gap-2 uppercase tracking-tight"><Hash className="w-3.5 h-3.5 text-slate-300" /> {t('brn_number')}: {c.brn}</p>}
+               {c.msic && <p className="text-[11px] text-slate-400 font-bold flex items-center gap-2 uppercase tracking-tight"><Shield className="w-3.5 h-3.5 text-slate-300" /> {t('msic_code')}: {c.msic}</p>}
                <p className="text-xs text-slate-400 font-medium line-clamp-2 leading-relaxed pt-2 border-t border-slate-50">{c.address}</p>
             </div>
           </div>
@@ -1091,11 +1180,7 @@ const Products = ({ state, onAdd, onUpdate, onDelete, lang }: { state: AppState,
             <input placeholder="Name" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newP.name || ''} onChange={e => setNewP({...newP, name: e.target.value})} />
             <input type="number" placeholder="Price" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newP.price || ''} onChange={e => setNewP({...newP, price: parseFloat(e.target.value)})} />
             <select className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold" value={newP.taxRate !== undefined ? newP.taxRate : 0} onChange={e => setNewP({...newP, taxRate: parseFloat(e.target.value)})}>
-                <option value={0}>0%</option>
-                <option value={0.05}>5%</option>
-                <option value={0.06}>6%</option>
-                <option value={0.08}>8%</option>
-                <option value={0.10}>10%</option>
+                <option value={0}>0%</option><option value={0.05}>5%</option><option value={0.06}>6%</option><option value={0.08}>8%</option><option value={0.10}>10%</option>
             </select>
             <textarea placeholder="Desc" className="md:col-span-3 w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold h-24 resize-none" value={newP.description || ''} onChange={e => setNewP({...newP, description: e.target.value})} />
         </div>
@@ -1123,7 +1208,7 @@ const Layout = ({ children, onLogout, lang, setLang }: { children?: React.ReactN
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} onLogout={onLogout} lang={lang} setLang={setLang} />
       <main className="flex-1 overflow-y-auto max-h-screen no-scrollbar relative">
-        <div className="lg:hidden px-4 pt-[env(safe-area-inset-top)] pb-3 sticky top-0 bg-white/90 backdrop-blur-md border-b border-slate-200 z-30 flex justify-between items-center no-print shadow-sm">
+        <div className="lg:hidden px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-4 sticky top-0 bg-white/90 backdrop-blur-md border-b border-slate-200 z-30 flex justify-between items-center no-print shadow-sm">
           <div className="flex items-center gap-2"><div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center font-bold text-white shadow-sm">TF</div><span className="font-bold tracking-tight text-slate-900">Techfab</span></div>
           <button onClick={() => setIsSidebarOpen(true)} className="p-3.5 -mr-2 text-slate-600 active:bg-slate-200 rounded-full transition-colors"><Menu className="w-6.5 h-6.5" /></button>
         </div>
@@ -1147,7 +1232,21 @@ const App = () => {
   });
   const [isActivated, setIsActivated] = useLocalStorage('techfab_license_active', false);
   const [licenseKeyInput, setLicenseKeyInput] = useState('');
+  const [showExitConfirmation, setShowExitConfirmation] = useState(false);
+
   const [state, setState] = useLocalStorage<AppState>('techfab_billing_db_v1', { documents: [], customers: DEFAULT_CUSTOMERS, products: DEFAULT_PRODUCTS, settings: DEFAULT_SETTINGS, lastBackupDate: '' });
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      const initFolders = async () => {
+        try {
+          await Filesystem.mkdir({ path: 'backups', directory: Directory.Documents, recursive: true });
+          await Filesystem.mkdir({ path: 'PDF', directory: Directory.Documents, recursive: true });
+        } catch (e) { console.warn("Init folders skipped or already exist."); }
+      };
+      initFolders();
+    }
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1177,13 +1276,37 @@ const App = () => {
     return () => clearTimeout(timer); 
   }, [state]);
 
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      const backListener = CapApp.addListener('backButton', ({ canGoBack }) => {
+        if (canGoBack) {
+          window.history.back(); 
+        } else {
+          setShowExitConfirmation(true);      
+        }
+      });
+
+      return () => {
+        backListener.then(l => l.remove()); 
+      };
+    }
+  }, []);
+
   const handleSaveDoc = (doc: Document) => { setState(prev => { const exists = prev.documents.some(d => d.id === doc.id); return exists ? { ...prev, documents: prev.documents.map(d => d.id === doc.id ? doc : d) } : { ...prev, documents: [doc, ...prev.documents] }; }); };
   const handleUpdateDocStatus = (id: string, status: Document['status']) => { setState(prev => ({ ...prev, documents: prev.documents.map(d => d.id === id ? { ...d, status } : d) })); };
   const handleDeleteDoc = (id: string) => { if (window.confirm('Move to trash?')) { setState(prev => ({ ...prev, documents: prev.documents.map(d => d.id === id ? { ...d, isDeleted: true } : d) })); } };
   const handleRestoreDoc = (id: string) => { setState(prev => ({ ...prev, documents: prev.documents.map(d => d.id === id ? { ...d, isDeleted: false } : d) })); alert("Restored!"); };
   const handlePermanentDelete = (id: string) => { if (window.confirm('PERMANENT DELETE?')) { setState(prev => ({ ...prev, documents: prev.documents.filter(d => d.id !== id) })); } };
-  const handleConvertDoc = (doc: Document, toType: DocType) => { const nextNum = getNextDocNumber(state.documents, toType, DOC_META[toType].prefix); const newDoc: Document = { ...doc, id: Math.random().toString(36).substr(2, 9), type: toType, number: nextNum, date: new Date().toISOString().split('T')[0], status: 'Draft', notes: `Ref: ${doc.number}${doc.notes ? '\n' + doc.notes : ''}` }; setState(prev => ({ ...prev, documents: [newDoc, ...prev.documents.map(d => d.id === doc.id ? { ...d, status: 'Converted' } : d)] })); alert(`Converted.`); };
+  
+  const handleConvertDoc = (doc: Document, toType: DocType) => { 
+    const nextNum = getNextDocNumber(state.documents, toType, DOC_META[toType].prefix); 
+    const newDoc: Document = { ...doc, id: Math.random().toString(36).substr(2, 9), type: toType, number: nextNum, date: new Date().toISOString().split('T')[0], status: 'Draft', notes: `Ref: ${doc.number}${doc.notes ? '\n' + doc.notes : ''}` }; 
+    setState(prev => ({ ...prev, documents: [newDoc, ...prev.documents.map(d => d.id === doc.id ? { ...d, status: 'Converted' } : d)] })); 
+    alert(`Converted.`); 
+  };
+
   const handleResetData = () => { Preferences.clear(); setState({ documents: [], customers: DEFAULT_CUSTOMERS, products: DEFAULT_PRODUCTS, settings: DEFAULT_SETTINGS, lastBackupDate: '' }); window.location.reload(); };
+  
   const handleExportData = async () => {
     try {
       const dataStr = JSON.stringify(state, null, 2);
@@ -1194,31 +1317,25 @@ const App = () => {
         await Share.share({ title: 'Techfab Backup', text: 'Backup file', url: savedFile.uri });
       } else {
         const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-        const linkElement = document.createElement('a');
-        linkElement.setAttribute('href', dataUri);
-        linkElement.setAttribute('download', fileName);
-        linkElement.click();
+        const linkElement = document.createElement('a'); linkElement.setAttribute('href', dataUri); linkElement.setAttribute('download', fileName); linkElement.click();
       }
       setState(prev => ({ ...prev, lastBackupDate: new Date().toISOString() }));
     } catch (err) { alert("Export failed."); }
   };
+
   const handleImportData = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const importedState = JSON.parse(e.target?.result as string) as AppState;
         if (importedState.documents && Array.isArray(importedState.customers)) {
-          if (confirm("Restore?")) {
-            setState(importedState);
-            alert("Restored!");
-          }
-        } else {
-          throw new Error("Invalid structure");
-        }
+          if (confirm("Restore?")) { setState(importedState); alert("Restored!"); }
+        } else { throw new Error("Invalid structure"); }
       } catch (err) { alert("Import failed: Invalid file format."); }
     };
     reader.readAsText(file);
   };
+
   const handleActivate = () => { if (licenseKeyInput === generateValidKey(systemId)) { setIsActivated(true); alert('Activated!'); } };
   const handleLogout = () => { setIsAuthenticated(false); setPasswordInput(''); };
 
@@ -1233,15 +1350,15 @@ const App = () => {
           <Route path="/documents" element={<DocumentsList state={state} onDelete={handleDeleteDoc} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} lang={lang} />} />
           <Route path="/recycle-bin" element={<RecycleBin state={state} onRestore={handleRestoreDoc} onPermanentDelete={handlePermanentDelete} lang={lang} />} />
           <Route path="/tax-report" element={<TaxReport state={state} lang={lang} />} />
-          <Route path="/documents/new" element={<DocumentForm state={state} onSave={handleSaveDoc} lang={lang} />} />
-          <Route path="/documents/:id/edit" element={<DocumentForm state={state} onSave={handleSaveDoc} lang={lang} />} />
+          <Route path="/documents/new" element={<DocumentForm state={state} onSave={handleSaveDoc} lang={lang} adminPassword={adminPassword} />} />
+          <Route path="/documents/:id/edit" element={<DocumentForm state={state} onSave={handleSaveDoc} lang={lang} adminPassword={adminPassword} />} />
           <Route path="/products" element={<Products state={state} onAdd={p => setState({...state, products: [...(state.products || []), p]})} onUpdate={updatedP => setState({...state, products: state.products.map(p => p.id === updatedP.id ? updatedP : p)})} onDelete={id => setState({...state, products: state.products.filter(p => id !== p.id)})} lang={lang} />} />
           <Route path="/customers" element={<Customers state={state} onAdd={c => setState({...state, customers: [...state.customers, c]})} onUpdate={updatedC => setState({...state, customers: state.customers.map(c => c.id === updatedC.id ? updatedC : c)})} onDelete={id => setState({...state, customers: state.customers.filter(c => id !== c.id)})} lang={lang} />} />
           <Route path="/settings" element={<Settings state={state} onSave={s => { setState({...state, settings: s}); alert('Profile updated.'); }} onReset={handleResetData} onExport={handleExportData} onImport={handleImportData} onChangePassword={setAdminPassword} lang={lang} adminPassword={adminPassword} />} />
           <Route path="/workflow" element={
             <div className="space-y-8 pb-20">
               <header><h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{TRANSLATIONS[lang].billing_lifecycle}</h1></header>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
                 <WorkflowStage title={TRANSLATIONS[lang].stage_sales} icon={<FileText className="text-blue-500 w-5 h-5" />} docs={state.documents.filter(d => !d.isDeleted && (d.type === DocType.QUOTATION || d.type === DocType.PROFORMA) && d.status !== 'Converted' && d.status !== 'Cancelled')} state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} targetType={DocType.DELIVERY_ORDER} actionLabel="Generate DO" />
                 <WorkflowStage title={TRANSLATIONS[lang].stage_fulfill} icon={<Truck className="text-purple-500 w-5 h-5" />} docs={state.documents.filter(d => !d.isDeleted && d.type === DocType.DELIVERY_ORDER && d.status !== 'Converted' && d.status !== 'Cancelled')} state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} targetType={DocType.INVOICE} actionLabel="Generate Invoice" />
                 <WorkflowStage title={TRANSLATIONS[lang].stage_billing} icon={<Receipt className="text-emerald-500 w-5 h-5" />} docs={state.documents.filter(d => !d.isDeleted && d.type === DocType.INVOICE && d.status !== 'Cancelled')} state={state} onConvert={handleConvertDoc} onUpdateStatus={handleUpdateDocStatus} />
@@ -1249,6 +1366,22 @@ const App = () => {
             </div>
           } />
         </Routes>
+
+        {showExitConfirmation && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowExitConfirmation(false)} />
+            <div className="relative bg-white rounded-[2rem] shadow-2xl p-6 w-full max-w-xs border border-slate-200 animate-in zoom-in-95 duration-200">
+              <div className="flex flex-col items-center text-center gap-4">
+                <div className="w-14 h-14 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center shadow-inner"><LogOut className="w-7 h-7 ml-1" /></div>
+                <div><h3 className="text-xl font-black text-slate-900 tracking-tight">Exit App?</h3><p className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full mt-2 inline-block"><CheckCircle2 className="w-3 h-3 inline mr-1 mb-0.5"/>Safe to exit. Data saved.</p></div>
+                <div className="grid grid-cols-2 gap-3 w-full mt-2">
+                   <button onClick={() => setShowExitConfirmation(false)} className="py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors">Cancel</button>
+                   <button onClick={() => CapApp.exitApp()} className="py-3.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl shadow-lg transition-all active:scale-95">Yes, Exit</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </Layout>
     </HashRouter>
   );
